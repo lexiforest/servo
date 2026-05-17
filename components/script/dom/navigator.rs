@@ -31,6 +31,7 @@ use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::Window_Binding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::XMLHttpRequestBinding::BodyInit;
 use crate::dom::bindings::error::{Error, Fallible};
+use crate::dom::bindings::num::Finite;
 use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::{DomGlobal, Reflector, reflect_dom_object};
 use crate::dom::bindings::root::{DomRoot, MutNullableDom};
@@ -51,6 +52,7 @@ use crate::dom::mediadevices::MediaDevices;
 use crate::dom::mediasession::MediaSession;
 use crate::dom::mimetypearray::MimeTypeArray;
 use crate::dom::navigatorinfo;
+use crate::dom::navigatoruadata::NavigatorUAData;
 use crate::dom::performance::performanceresourcetiming::InitiatorType;
 use crate::dom::permissions::Permissions;
 use crate::dom::pluginarray::PluginArray;
@@ -126,6 +128,7 @@ pub(crate) struct Navigator {
     #[cfg(feature = "gamepad")]
     gamepads: DomRefCell<Vec<MutNullableDom<Gamepad>>>,
     permissions: MutNullableDom<Permissions>,
+    ua_data: MutNullableDom<NavigatorUAData>,
     mediasession: MutNullableDom<MediaSession>,
     clipboard: MutNullableDom<Clipboard>,
     storage: MutNullableDom<StorageManager>,
@@ -155,6 +158,7 @@ impl Navigator {
             #[cfg(feature = "gamepad")]
             gamepads: Default::default(),
             permissions: Default::default(),
+            ua_data: Default::default(),
             mediasession: Default::default(),
             clipboard: Default::default(),
             storage: Default::default(),
@@ -348,6 +352,12 @@ impl NavigatorMethods<crate::DomTypeHolder> for Navigator {
         navigatorinfo::AppVersion()
     }
 
+    /// <https://wicg.github.io/ua-client-hints/#navigatoruadata>
+    fn UserAgentData(&self) -> DomRoot<NavigatorUAData> {
+        self.ua_data
+            .or_init(|| NavigatorUAData::new(&self.global(), CanGc::deprecated_note()))
+    }
+
     // https://webbluetoothcg.github.io/web-bluetooth/#dom-navigator-bluetooth
     #[cfg(feature = "bluetooth")]
     fn Bluetooth(&self) -> DomRoot<Bluetooth> {
@@ -373,7 +383,17 @@ impl NavigatorMethods<crate::DomTypeHolder> for Navigator {
 
     // https://html.spec.whatwg.org/multipage/#dom-navigator-languages
     fn Languages(&self, cx: JSContext, can_gc: CanGc, retval: MutableHandleValue) {
-        to_frozen_array(&[self.Language()], cx, retval, can_gc)
+        let languages = pref!(bimp_js_languages);
+        if languages.is_empty() {
+            to_frozen_array(&[self.Language()], cx, retval, can_gc)
+        } else {
+            let languages = languages
+                .split(',')
+                .filter(|language| !language.is_empty())
+                .map(DOMString::from)
+                .collect::<Vec<_>>();
+            to_frozen_array(&languages, cx, retval, can_gc)
+        }
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-online>
@@ -400,7 +420,7 @@ impl NavigatorMethods<crate::DomTypeHolder> for Navigator {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-pdfviewerenabled>
     fn PdfViewerEnabled(&self) -> bool {
-        false
+        pref!(bimp_js_pdf_viewer_enabled)
     }
 
     /// <https://w3c.github.io/ServiceWorker/#navigator-service-worker-attribute>
@@ -472,7 +492,42 @@ impl NavigatorMethods<crate::DomTypeHolder> for Navigator {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-hardwareconcurrency>
     fn HardwareConcurrency(&self) -> u64 {
-        hardware_concurrency()
+        let value = pref!(bimp_js_hardware_concurrency);
+        if value > 0 {
+            value as u64
+        } else {
+            hardware_concurrency()
+        }
+    }
+
+    /// Chromium-compatible `navigator.deviceMemory` persona override.
+    fn DeviceMemory(&self) -> Finite<f64> {
+        let value = pref!(bimp_js_device_memory_gb);
+        Finite::wrap(if value > 0 { value as f64 } else { 8.0 })
+    }
+
+    /// Chromium-compatible `navigator.maxTouchPoints` persona override.
+    fn MaxTouchPoints(&self) -> u32 {
+        let value = pref!(bimp_js_max_touch_points);
+        if value > 0 { value as u32 } else { 0 }
+    }
+
+    /// <https://w3c.github.io/webdriver/#dfn-webdriver>
+    fn Webdriver(&self) -> bool {
+        pref!(bimp_js_webdriver)
+    }
+
+    fn GetDoNotTrack(&self) -> Option<DOMString> {
+        let value = pref!(bimp_js_do_not_track);
+        if value.is_empty() {
+            None
+        } else {
+            Some(DOMString::from(value))
+        }
+    }
+
+    fn GlobalPrivacyControl(&self) -> bool {
+        pref!(bimp_js_global_privacy_control)
     }
 
     /// <https://w3c.github.io/clipboard-apis/#h-navigator-clipboard>

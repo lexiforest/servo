@@ -10,10 +10,13 @@ WorkerNavigator includes NavigatorLanguage;
 WorkerNavigator includes NavigatorOnLine;
 WorkerNavigator includes NavigatorConcurrentHardware;
 
+partial interface WorkerNavigator {
+  readonly attribute double deviceMemory;
+};
+
 // https://w3c.github.io/permissions/#navigator-and-workernavigator-extension
 
 [Exposed=(Worker)]
 partial interface WorkerNavigator {
   [Pref="dom_permissions_enabled"] readonly attribute Permissions permissions;
 };
-

@@ -73,6 +73,14 @@ interface mixin NavigatorConcurrentHardware {
   readonly attribute unsigned long long hardwareConcurrency;
 };
 
+partial interface Navigator {
+  readonly attribute double deviceMemory;
+  readonly attribute unsigned long maxTouchPoints;
+  readonly attribute boolean webdriver;
+  readonly attribute DOMString? doNotTrack;
+  [Pref="bimp_js_global_privacy_control_enabled"] readonly attribute boolean globalPrivacyControl;
+};
+
 // https://w3c.github.io/clipboard-apis/#navigator-interface
 partial interface Navigator {
   [SecureContext, SameObject, Pref="dom_async_clipboard_enabled"] readonly attribute Clipboard clipboard;

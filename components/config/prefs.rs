@@ -345,6 +345,82 @@ pub struct Preferences {
     /// The user-agent to use for Servo. This can also be set via [`UserAgentPlatform`] in
     /// order to set the value to the default value for the given platform.
     pub user_agent: String,
+    /// Bimp persona override for the network `Accept-Language` header.
+    pub bimp_network_accept_language: String,
+    /// Bimp persona override for `navigator.appVersion`.
+    pub bimp_js_app_version: String,
+    /// Bimp persona override for `navigator.platform`.
+    pub bimp_js_platform: String,
+    /// Bimp persona override for `navigator.language`.
+    pub bimp_js_language: String,
+    /// Bimp persona override for `navigator.languages`, comma-separated.
+    pub bimp_js_languages: String,
+    /// Bimp persona override for `navigator.hardwareConcurrency`.
+    pub bimp_js_hardware_concurrency: i64,
+    /// Bimp persona override for `navigator.deviceMemory`, in gigabytes.
+    pub bimp_js_device_memory_gb: i64,
+    /// Bimp persona override for `navigator.maxTouchPoints`.
+    pub bimp_js_max_touch_points: i64,
+    /// Bimp persona override for `navigator.webdriver`.
+    pub bimp_js_webdriver: bool,
+    /// Bimp persona override for `navigator.doNotTrack`; empty string reports null.
+    pub bimp_js_do_not_track: String,
+    /// Whether `navigator.globalPrivacyControl` is exposed.
+    pub bimp_js_global_privacy_control_enabled: bool,
+    /// Bimp persona override for `navigator.globalPrivacyControl`.
+    pub bimp_js_global_privacy_control: bool,
+    /// Bimp persona override for low entropy UA client hint brands.
+    pub bimp_js_ua_brands: String,
+    /// Bimp persona override for UA client hint mobile.
+    pub bimp_js_ua_mobile: bool,
+    /// Bimp persona override for UA client hint platform.
+    pub bimp_js_ua_platform: String,
+    /// Bimp persona override for UA client hint full browser version.
+    pub bimp_js_ua_full_version: String,
+    /// Bimp persona override for high entropy UA client hint platform version.
+    pub bimp_js_ua_platform_version: String,
+    /// Bimp persona override for high entropy UA client hint architecture.
+    pub bimp_js_ua_architecture: String,
+    /// Bimp persona override for high entropy UA client hint bitness.
+    pub bimp_js_ua_bitness: String,
+    /// Bimp persona override for high entropy UA client hint model.
+    pub bimp_js_ua_model: String,
+    /// Bimp persona override for Bluetooth availability.
+    pub bimp_js_bluetooth_available: bool,
+    /// Bimp persona override for media input devices exposed by `enumerateDevices()`.
+    pub bimp_js_media_audio_inputs: i64,
+    /// Bimp persona override for video input devices exposed by `enumerateDevices()`.
+    pub bimp_js_media_video_inputs: i64,
+    /// Bimp persona override for audio output devices exposed by `enumerateDevices()`.
+    pub bimp_js_media_audio_outputs: i64,
+    /// Bimp persona override for `navigator.vendor`.
+    pub bimp_js_vendor: String,
+    /// Bimp persona override for `navigator.productSub`.
+    pub bimp_js_product_sub: String,
+    /// Bimp persona override for `navigator.pdfViewerEnabled`.
+    pub bimp_js_pdf_viewer_enabled: bool,
+    /// Bimp persona override for screen width.
+    pub bimp_js_screen_width: i64,
+    /// Bimp persona override for screen height.
+    pub bimp_js_screen_height: i64,
+    /// Bimp persona override for available screen width.
+    pub bimp_js_screen_avail_width: i64,
+    /// Bimp persona override for available screen height.
+    pub bimp_js_screen_avail_height: i64,
+    /// Bimp persona override for screen color depth.
+    pub bimp_js_screen_color_depth: i64,
+    /// Bimp persona override for screen pixel depth.
+    pub bimp_js_screen_pixel_depth: i64,
+    /// Bimp persona override for WebGL vendor strings.
+    pub bimp_js_webgl_vendor: String,
+    /// Bimp persona override for WebGL renderer strings.
+    pub bimp_js_webgl_renderer: String,
+    /// Bimp persona override for masked WebGL vendor strings.
+    pub bimp_js_webgl_masked_vendor: String,
+    /// Bimp persona override for masked WebGL renderer strings.
+    pub bimp_js_webgl_masked_renderer: String,
+    /// Whether Servo's internal WebDriver helper functions are exposed on Window.
+    pub bimp_webdriver_helpers_enabled: bool,
     /// Whether or not the viewport meta tag is enabled.
     pub viewport_meta_enabled: bool,
     pub log_filter: String,
@@ -516,6 +592,44 @@ impl Preferences {
             threadpools_webrender_workers_max: 4,
             webgl_testing_context_creation_error: false,
             user_agent: String::new(),
+            bimp_network_accept_language: String::new(),
+            bimp_js_app_version: String::new(),
+            bimp_js_platform: String::new(),
+            bimp_js_language: String::new(),
+            bimp_js_languages: String::new(),
+            bimp_js_hardware_concurrency: 0,
+            bimp_js_device_memory_gb: 0,
+            bimp_js_max_touch_points: 0,
+            bimp_js_webdriver: false,
+            bimp_js_do_not_track: String::new(),
+            bimp_js_global_privacy_control_enabled: false,
+            bimp_js_global_privacy_control: false,
+            bimp_js_ua_brands: String::new(),
+            bimp_js_ua_mobile: false,
+            bimp_js_ua_platform: String::new(),
+            bimp_js_ua_full_version: String::new(),
+            bimp_js_ua_platform_version: String::new(),
+            bimp_js_ua_architecture: String::new(),
+            bimp_js_ua_bitness: String::new(),
+            bimp_js_ua_model: String::new(),
+            bimp_js_bluetooth_available: false,
+            bimp_js_media_audio_inputs: 0,
+            bimp_js_media_video_inputs: 0,
+            bimp_js_media_audio_outputs: 0,
+            bimp_js_vendor: String::new(),
+            bimp_js_product_sub: String::new(),
+            bimp_js_pdf_viewer_enabled: false,
+            bimp_js_screen_width: 0,
+            bimp_js_screen_height: 0,
+            bimp_js_screen_avail_width: 0,
+            bimp_js_screen_avail_height: 0,
+            bimp_js_screen_color_depth: 0,
+            bimp_js_screen_pixel_depth: 0,
+            bimp_js_webgl_vendor: String::new(),
+            bimp_js_webgl_renderer: String::new(),
+            bimp_js_webgl_masked_vendor: String::new(),
+            bimp_js_webgl_masked_renderer: String::new(),
+            bimp_webdriver_helpers_enabled: false,
             viewport_meta_enabled: false,
             log_filter: String::new(),
         }

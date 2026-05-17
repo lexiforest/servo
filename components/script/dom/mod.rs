@@ -310,6 +310,7 @@ pub(crate) mod namednodemap;
 pub(crate) mod navigationpreloadmanager;
 pub(crate) mod navigator;
 pub(crate) mod navigatorinfo;
+pub(crate) mod navigatoruadata;
 #[expect(dead_code)]
 pub(crate) mod node;
 pub(crate) use self::node::*;

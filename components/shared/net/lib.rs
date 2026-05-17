@@ -4,8 +4,9 @@
 
 #![deny(unsafe_code)]
 
+use std::collections::HashSet;
 use std::fmt::{self, Debug, Display};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 
 use content_security_policy::{self as csp};
@@ -30,13 +31,38 @@ use servo_base::generic_channel::{
     self, CallbackSetter, GenericCallback, GenericOneshotSender, GenericSend, GenericSender,
     SendResult,
 };
-use servo_base::id::{CookieStoreId, HistoryStateId, PipelineId};
+use servo_base::id::{CookieStoreId, HistoryStateId, PipelineId, WebViewId};
 use servo_url::{ImmutableOrigin, ServoUrl};
 use uuid::Uuid;
 
 /// Identifies a pending asynchronous cookie operation initiated by the embedder.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct CookieOperationId(pub u64);
+
+static BIMP_FLASH_WEBVIEWS: LazyLock<Mutex<HashSet<WebViewId>>> =
+    LazyLock::new(|| Mutex::new(HashSet::new()));
+
+pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {
+    let mut webviews = BIMP_FLASH_WEBVIEWS
+        .lock()
+        .expect("Bimp flash webview registry poisoned");
+    if enabled {
+        webviews.insert(webview_id);
+    } else {
+        webviews.remove(&webview_id);
+    }
+}
+
+pub fn remove_bimp_flash_webview(webview_id: WebViewId) {
+    set_bimp_flash_webview(webview_id, false);
+}
+
+pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
+    BIMP_FLASH_WEBVIEWS
+        .lock()
+        .expect("Bimp flash webview registry poisoned")
+        .contains(&webview_id)
+}
 
 use crate::fetch::headers::determine_nosniff;
 use crate::filemanager_thread::FileManagerThreadMsg;
@@ -284,11 +310,11 @@ impl std::fmt::Debug for DebugVec {
 impl FetchResponseMsg {
     pub fn request_id(&self) -> RequestId {
         match self {
-            FetchResponseMsg::ProcessRequestBody(id) |
-            FetchResponseMsg::ProcessResponse(id, ..) |
-            FetchResponseMsg::ProcessResponseChunk(id, ..) |
-            FetchResponseMsg::ProcessResponseEOF(id, ..) |
-            FetchResponseMsg::ProcessCspViolations(id, ..) => *id,
+            FetchResponseMsg::ProcessRequestBody(id)
+            | FetchResponseMsg::ProcessResponse(id, ..)
+            | FetchResponseMsg::ProcessResponseChunk(id, ..)
+            | FetchResponseMsg::ProcessResponseEOF(id, ..)
+            | FetchResponseMsg::ProcessCspViolations(id, ..) => *id,
         }
     }
 }
@@ -1203,20 +1229,20 @@ impl NetworkError {
     pub fn is_permanent_failure(&self) -> bool {
         matches!(
             self,
-            NetworkError::ContentSecurityPolicy |
-                NetworkError::MixedContent |
-                NetworkError::SubresourceIntegrity |
-                NetworkError::Nosniff |
-                NetworkError::InvalidPort |
-                NetworkError::CorsGeneral |
-                NetworkError::CrossOriginResponse |
-                NetworkError::CorsCredentials |
-                NetworkError::CorsAllowMethods |
-                NetworkError::CorsAllowHeaders |
-                NetworkError::CorsMethod |
-                NetworkError::CorsAuthorization |
-                NetworkError::CorsHeaders |
-                NetworkError::UnsupportedScheme
+            NetworkError::ContentSecurityPolicy
+                | NetworkError::MixedContent
+                | NetworkError::SubresourceIntegrity
+                | NetworkError::Nosniff
+                | NetworkError::InvalidPort
+                | NetworkError::CorsGeneral
+                | NetworkError::CrossOriginResponse
+                | NetworkError::CorsCredentials
+                | NetworkError::CorsAllowMethods
+                | NetworkError::CorsAllowHeaders
+                | NetworkError::CorsMethod
+                | NetworkError::CorsAuthorization
+                | NetworkError::CorsHeaders
+                | NetworkError::UnsupportedScheme
         )
     }
 
@@ -1302,6 +1328,14 @@ pub fn set_default_accept_language(headers: &mut HeaderMap) {
     // If request’s header list does not contain `Accept-Language`,
     // then user agents should append (`Accept-Language, an appropriate header value) to request’s header list.
     if headers.contains_key(header::ACCEPT_LANGUAGE) {
+        return;
+    }
+
+    let accept_language = servo_config::pref!(bimp_network_accept_language);
+    if !accept_language.is_empty()
+        && let Ok(value) = HeaderValue::from_str(&accept_language)
+    {
+        headers.insert(header::ACCEPT_LANGUAGE, value);
         return;
     }
 

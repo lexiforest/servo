@@ -5,6 +5,7 @@
 use dom_struct::dom_struct;
 use embedder_traits::{EmbedderMsg, ScreenMetrics};
 use servo_base::generic_channel;
+use servo_config::pref;
 
 use crate::dom::bindings::codegen::Bindings::ScreenBinding::ScreenMethods;
 use crate::dom::bindings::num::Finite;
@@ -47,31 +48,53 @@ impl Screen {
 impl ScreenMethods<crate::DomTypeHolder> for Screen {
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-availwidth>
     fn AvailWidth(&self) -> Finite<f64> {
-        Finite::wrap(self.screen_metrics().available_size.width as f64)
+        let value = pref!(bimp_js_screen_avail_width);
+        Finite::wrap(if value > 0 {
+            value as f64
+        } else {
+            self.screen_metrics().available_size.width as f64
+        })
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-availheight>
     fn AvailHeight(&self) -> Finite<f64> {
-        Finite::wrap(self.screen_metrics().available_size.height as f64)
+        let value = pref!(bimp_js_screen_avail_height);
+        Finite::wrap(if value > 0 {
+            value as f64
+        } else {
+            self.screen_metrics().available_size.height as f64
+        })
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-width>
     fn Width(&self) -> Finite<f64> {
-        Finite::wrap(self.screen_metrics().screen_size.width as f64)
+        let value = pref!(bimp_js_screen_width);
+        Finite::wrap(if value > 0 {
+            value as f64
+        } else {
+            self.screen_metrics().screen_size.width as f64
+        })
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-height>
     fn Height(&self) -> Finite<f64> {
-        Finite::wrap(self.screen_metrics().screen_size.height as f64)
+        let value = pref!(bimp_js_screen_height);
+        Finite::wrap(if value > 0 {
+            value as f64
+        } else {
+            self.screen_metrics().screen_size.height as f64
+        })
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-colordepth>
     fn ColorDepth(&self) -> u32 {
-        24
+        let value = pref!(bimp_js_screen_color_depth);
+        if value > 0 { value as u32 } else { 24 }
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-pixeldepth>
     fn PixelDepth(&self) -> u32 {
-        24
+        let value = pref!(bimp_js_screen_pixel_depth);
+        if value > 0 { value as u32 } else { 24 }
     }
 }
