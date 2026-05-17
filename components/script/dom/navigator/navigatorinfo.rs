@@ -11,12 +11,17 @@ pub(crate) fn Product() -> DOMString {
 
 #[expect(non_snake_case)]
 pub(crate) fn ProductSub() -> DOMString {
-    DOMString::from("20100101")
+    let value = servo_config::pref!(bimp_js_product_sub);
+    DOMString::from(if value.is_empty() {
+        "20100101".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
 pub(crate) fn Vendor() -> DOMString {
-    DOMString::from("")
+    DOMString::from(servo_config::pref!(bimp_js_vendor))
 }
 
 #[expect(non_snake_case)]
@@ -42,25 +47,45 @@ pub(crate) fn AppCodeName() -> DOMString {
 #[expect(non_snake_case)]
 #[cfg(target_os = "windows")]
 pub(crate) fn Platform() -> DOMString {
-    DOMString::from("Win32")
+    let value = servo_config::pref!(bimp_js_platform);
+    DOMString::from(if value.is_empty() {
+        "Win32".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
 #[cfg(any(target_os = "android", target_os = "linux", target_os = "freebsd"))]
 pub(crate) fn Platform() -> DOMString {
-    DOMString::from("Linux")
+    let value = servo_config::pref!(bimp_js_platform);
+    DOMString::from(if value.is_empty() {
+        "Linux".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
 #[cfg(target_os = "macos")]
 pub(crate) fn Platform() -> DOMString {
-    DOMString::from("Mac")
+    let value = servo_config::pref!(bimp_js_platform);
+    DOMString::from(if value.is_empty() {
+        "Mac".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
 #[cfg(target_os = "ios")]
 pub(crate) fn Platform() -> DOMString {
-    DOMString::from("iOS")
+    let value = servo_config::pref!(bimp_js_platform);
+    DOMString::from(if value.is_empty() {
+        "iOS".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
@@ -70,10 +95,20 @@ pub(crate) fn UserAgent(user_agent: &str) -> DOMString {
 
 #[expect(non_snake_case)]
 pub(crate) fn AppVersion() -> DOMString {
-    DOMString::from("4.0")
+    let value = servo_config::pref!(bimp_js_app_version);
+    DOMString::from(if value.is_empty() {
+        "4.0".to_string()
+    } else {
+        value
+    })
 }
 
 #[expect(non_snake_case)]
 pub(crate) fn Language() -> DOMString {
-    DOMString::from(net_traits::get_current_locale().0.clone())
+    let value = servo_config::pref!(bimp_js_language);
+    DOMString::from(if value.is_empty() {
+        net_traits::get_current_locale().0.clone()
+    } else {
+        value
+    })
 }

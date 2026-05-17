@@ -9,12 +9,14 @@ use script_bindings::reflector::{Reflector, reflect_dom_object};
 use servo_config::pref;
 
 use crate::dom::bindings::codegen::Bindings::WorkerNavigatorBinding::WorkerNavigatorMethods;
+use crate::dom::bindings::num::Finite;
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{DomRoot, MutNullableDom};
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::utils::to_frozen_array;
 use crate::dom::navigator::hardware_concurrency;
 use crate::dom::navigatorinfo;
+use crate::dom::navigatoruadata::NavigatorUAData;
 use crate::dom::permissions::Permissions;
 use crate::dom::storagemanager::StorageManager;
 #[cfg(feature = "webgpu")]
@@ -27,6 +29,7 @@ use crate::script_runtime::CanGc;
 pub(crate) struct WorkerNavigator {
     reflector_: Reflector,
     permissions: MutNullableDom<Permissions>,
+    ua_data: MutNullableDom<NavigatorUAData>,
     storage: MutNullableDom<StorageManager>,
     #[cfg(feature = "webgpu")]
     gpu: MutNullableDom<GPU>,
@@ -37,6 +40,7 @@ impl WorkerNavigator {
         WorkerNavigator {
             reflector_: Reflector::new(),
             permissions: Default::default(),
+            ua_data: Default::default(),
             storage: Default::default(),
             #[cfg(feature = "webgpu")]
             gpu: Default::default(),
@@ -99,6 +103,12 @@ impl WorkerNavigatorMethods<crate::DomTypeHolder> for WorkerNavigator {
         navigatorinfo::AppVersion()
     }
 
+    /// <https://wicg.github.io/ua-client-hints/#navigatoruadata>
+    fn UserAgentData(&self) -> DomRoot<NavigatorUAData> {
+        self.ua_data
+            .or_init(|| NavigatorUAData::new(&self.global(), CanGc::deprecated_note()))
+    }
+
     /// <https://html.spec.whatwg.org/multipage/#navigatorlanguage>
     fn Language(&self) -> DOMString {
         navigatorinfo::Language()
@@ -106,7 +116,17 @@ impl WorkerNavigatorMethods<crate::DomTypeHolder> for WorkerNavigator {
 
     // https://html.spec.whatwg.org/multipage/#dom-navigator-languages
     fn Languages(&self, cx: &mut JSContext, retval: MutableHandleValue) {
-        to_frozen_array(cx, &[self.Language()], retval)
+        let languages = pref!(bimp_js_languages);
+        if languages.is_empty() {
+            to_frozen_array(cx, &[self.Language()], retval)
+        } else {
+            let languages = languages
+                .split(',')
+                .filter(|language| !language.is_empty())
+                .map(DOMString::from)
+                .collect::<Vec<_>>();
+            to_frozen_array(cx, &languages, retval)
+        }
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-online>
@@ -134,6 +154,17 @@ impl WorkerNavigatorMethods<crate::DomTypeHolder> for WorkerNavigator {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-navigator-hardwareconcurrency>
     fn HardwareConcurrency(&self) -> u64 {
-        hardware_concurrency()
+        let value = pref!(bimp_js_hardware_concurrency);
+        if value > 0 {
+            value as u64
+        } else {
+            hardware_concurrency()
+        }
+    }
+
+    /// Chromium-compatible `navigator.deviceMemory` persona override.
+    fn DeviceMemory(&self) -> Finite<f64> {
+        let value = pref!(bimp_js_device_memory_gb);
+        Finite::wrap(if value > 0 { value as f64 } else { 8.0 })
     }
 }

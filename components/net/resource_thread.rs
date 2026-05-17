@@ -27,7 +27,7 @@ use net_traits::response::{Response, ResponseInit};
 use net_traits::{
     AsyncRuntime, CookieAsyncResponse, CookieData, CookieSource, CoreResourceMsg,
     CoreResourceThread, CustomResponseMediator, DiscardFetch, FetchChannels, FetchTaskTarget,
-    ResourceFetchTiming, ResourceThreads, ResourceTimingType, WebSocketDomAction,
+    NetworkError, ResourceFetchTiming, ResourceThreads, ResourceTimingType, WebSocketDomAction,
     WebSocketNetworkEvent,
 };
 use parking_lot::{Mutex, RwLock};
@@ -678,9 +678,9 @@ impl ResourceChannelManager {
                 return false;
             },
             // Ignore these messages as they are only sent on very specific channels.
-            CoreResourceMsg::CollectMemoryReport(_) |
-            CoreResourceMsg::RevokeTokenForFile(..) |
-            CoreResourceMsg::RefreshTokenForFile(..) => {},
+            CoreResourceMsg::CollectMemoryReport(_)
+            | CoreResourceMsg::RevokeTokenForFile(..)
+            | CoreResourceMsg::RefreshTokenForFile(..) => {},
         }
         true
     }
@@ -786,6 +786,16 @@ impl CoreResourceManager {
 
         let request = request_builder.build();
         let url = request.current_url();
+        if bimp_flash_blocks_request(&request) {
+            debug!(
+                "Bimp flash mode blocked visual resource {} ({:?})",
+                url, request.destination
+            );
+            let response = Response::network_error(NetworkError::LoadCancelled);
+            sender.process_response(&request, &response);
+            sender.process_response_eof(&request, &response);
+            return;
+        }
 
         // In the case of a valid blob URL, acquiring a token granting access to a file,
         // regardless if the URL is revoked after token acquisition.
@@ -944,4 +954,14 @@ impl CoreResourceManager {
             }
         });
     }
+}
+
+fn bimp_flash_blocks_request(request: &net_traits::request::Request) -> bool {
+    request
+        .target_webview_id
+        .is_some_and(net_traits::is_bimp_flash_webview)
+        && matches!(
+            request.destination,
+            Destination::Font | Destination::Image | Destination::Style
+        )
 }

@@ -8,11 +8,10 @@ use dom_struct::dom_struct;
 use js::context::JSContext;
 use js::realm::CurrentRealm;
 use script_bindings::reflector::reflect_dom_object;
-use servo_media::ServoMedia;
 use servo_media::streams::MediaStreamType;
 use servo_media::streams::capture::{Constrain, ConstrainRange, MediaTrackConstraintSet};
 
-use crate::conversions::Convert;
+use crate::dom::bindings::codegen::Bindings::MediaDeviceInfoBinding::MediaDeviceKind;
 use crate::dom::bindings::codegen::Bindings::MediaDevicesBinding::{
     MediaDevicesMethods, MediaStreamConstraints,
 };
@@ -55,7 +54,7 @@ impl MediaDevicesMethods<crate::DomTypeHolder> for MediaDevices {
         constraints: &MediaStreamConstraints,
     ) -> Rc<Promise> {
         let p = Promise::new_in_realm(cx);
-        let media = ServoMedia::get();
+        let media = servo_media::ServoMedia::get();
         let stream = MediaStream::new(cx, &self.global());
         if let Some(constraints) = convert_constraints(&constraints.audio) &&
             let Some(audio) = media.create_audioinput_stream(constraints)
@@ -84,33 +83,62 @@ impl MediaDevicesMethods<crate::DomTypeHolder> for MediaDevices {
         // XXX These steps should be run in parallel.
         // XXX Steps 2.1 - 2.4
 
-        // Step 2.5
-        let media = ServoMedia::get();
-        let device_monitor = media.get_device_monitor();
-        let result_list = device_monitor
-            .enumerate_devices()
-            .map(|devices| {
-                devices
-                    .iter()
-                    .map(|device| {
-                        // XXX The media backend has no way to group devices yet.
-                        MediaDeviceInfo::new(
-                            cx,
-                            &self.global(),
-                            &device.device_id,
-                            device.kind.convert(),
-                            &device.label,
-                            "",
-                        )
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
+        // Step 2.5. Use persona-backed device counts instead of leaking host hardware.
+        let result_list = persona_media_devices(cx, &self.global());
 
         p.resolve_native(cx, &result_list);
 
         // Step 3.
         p
+    }
+}
+
+fn persona_media_devices(
+    cx: &mut JSContext,
+    global: &GlobalScope,
+) -> Vec<DomRoot<MediaDeviceInfo>> {
+    let mut devices = Vec::new();
+    push_persona_media_devices(
+        &mut devices,
+        cx,
+        global,
+        MediaDeviceKind::Audioinput,
+        "audio-input",
+        servo_config::pref!(bimp_js_media_audio_inputs),
+    );
+    push_persona_media_devices(
+        &mut devices,
+        cx,
+        global,
+        MediaDeviceKind::Videoinput,
+        "video-input",
+        servo_config::pref!(bimp_js_media_video_inputs),
+    );
+    push_persona_media_devices(
+        &mut devices,
+        cx,
+        global,
+        MediaDeviceKind::Audiooutput,
+        "audio-output",
+        servo_config::pref!(bimp_js_media_audio_outputs),
+    );
+    devices
+}
+
+fn push_persona_media_devices(
+    devices: &mut Vec<DomRoot<MediaDeviceInfo>>,
+    cx: &mut JSContext,
+    global: &GlobalScope,
+    kind: MediaDeviceKind,
+    prefix: &str,
+    count: i64,
+) {
+    for index in 0..count.clamp(0, 16) {
+        let device_id = format!("{prefix}-{index}");
+        let group_id = format!("group-{index}");
+        devices.push(MediaDeviceInfo::new(
+            cx, global, &device_id, kind, "", &group_id,
+        ));
     }
 }
 

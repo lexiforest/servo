@@ -41,6 +41,7 @@ pub use media::{
     GlApi as MediaGlApi, GlContext as MediaGlContext, NativeDisplay as MediaNativeDisplay,
 };
 pub use net_traits::CookieSource;
+pub use net_traits::{is_bimp_flash_webview, remove_bimp_flash_webview, set_bimp_flash_webview};
 // This API should probably not be exposed in this way. Instead there should be a fully
 // fleshed out public domains API if we want to expose it.
 pub use net_traits::pub_domains::is_reg_domain;
