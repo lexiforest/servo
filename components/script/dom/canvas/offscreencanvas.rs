@@ -43,7 +43,7 @@ use crate::dom::imagebitmap::ImageBitmap;
 use crate::dom::imagebitmaprenderingcontext::ImageBitmapRenderingContext;
 use crate::dom::offscreencanvasrenderingcontext2d::OffscreenCanvasRenderingContext2D;
 use crate::dom::promise::Promise;
-use crate::dom::types::{WebGLRenderingContext, Window};
+use crate::dom::types::{WebGLRenderingContext, Window, WorkerGlobalScope};
 use crate::dom::webgl::webgl2renderingcontext::WebGL2RenderingContext;
 
 /// <https://html.spec.whatwg.org/multipage/#offscreencanvas>
@@ -220,20 +220,32 @@ impl OffscreenCanvas {
             RootedHTMLCanvasElementOrOffscreenCanvas::OffscreenCanvas(DomRoot::from_ref(self));
         let size = self.get_size();
         let attrs = Self::get_gl_attributes(cx, options)?;
-        self.global()
-            .downcast::<Window>()
-            .and_then(|window| {
-                WebGLRenderingContext::new(cx, window, &canvas, WebGLVersion::WebGL1, size, attrs)
-            })
-            .map(|context| {
-                // Step 2. If context is null, then return null;
-                // otherwise set this's context mode to webgl or webgl2.
-                *self.context.borrow_mut() =
-                    Some(OffscreenRenderingContext::WebGL(Dom::from_ref(&*context)));
+        let global = self.global();
+        let context = if let Some(window) = global.downcast::<Window>() {
+            WebGLRenderingContext::new(cx, window, &canvas, WebGLVersion::WebGL1, size, attrs)
+        } else if let Some(worker) = global.downcast::<WorkerGlobalScope>() {
+            WebGLRenderingContext::new_for_worker(
+                cx,
+                &global,
+                worker.webgl_chan(),
+                worker.webgl_painter_id(),
+                &canvas,
+                WebGLVersion::WebGL1,
+                size,
+                attrs,
+            )
+        } else {
+            None
+        };
+        context.map(|context| {
+            // Step 2. If context is null, then return null;
+            // otherwise set this's context mode to webgl or webgl2.
+            *self.context.borrow_mut() =
+                Some(OffscreenRenderingContext::WebGL(Dom::from_ref(&*context)));
 
-                // Step 3. Return context.
-                context
-            })
+            // Step 3. Return context.
+            context
+        })
     }
 
     // <https://html.spec.whatwg.org/multipage/#offscreen-context-type-webgl>

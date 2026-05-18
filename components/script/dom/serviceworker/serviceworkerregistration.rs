@@ -97,6 +97,10 @@ impl ServiceWorkerRegistration {
         *self.installing.borrow_mut() = Some(Dom::from_ref(worker));
     }
 
+    pub(crate) fn set_active(&self, worker: &ServiceWorker) {
+        *self.active.borrow_mut() = Some(Dom::from_ref(worker));
+    }
+
     pub(crate) fn get_navigation_preload_header_value(&self) -> Option<ByteString> {
         self.navigation_preload_header_value.borrow().clone()
     }

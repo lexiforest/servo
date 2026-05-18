@@ -26,13 +26,14 @@ use script_bindings::conversions::SafeToJSValConvertible;
 use script_bindings::reflector::{AssociatedMemory, Reflector, reflect_dom_object_with_cx};
 use serde::{Deserialize, Serialize};
 use servo_base::generic_channel::GenericSharedMemory;
+use servo_base::id::PainterId;
 use servo_base::{Epoch, generic_channel};
 use servo_canvas_traits::webgl::WebGLError::*;
 use servo_canvas_traits::webgl::{
     AlphaTreatment, GLContextAttributes, GLLimits, GlType, Parameter, SizedDataType, TexDataType,
     TexFormat, TexParameter, WebGLCommand, WebGLCommandBacktrace, WebGLContextId, WebGLError,
     WebGLFramebufferBindingRequest, WebGLMsg, WebGLMsgSender, WebGLProgramId, WebGLResult,
-    WebGLSLVersion, WebGLVersion, YAxisTreatment, webgl_channel,
+    WebGLChan, WebGLSLVersion, WebGLVersion, YAxisTreatment, webgl_channel,
 };
 use servo_config::pref;
 use webrender_api::ImageKey;
@@ -59,7 +60,6 @@ use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{DomOnceCell, DomRoot, MutNullableDom};
 use crate::dom::bindings::str::DOMString;
 use crate::dom::event::{Event, EventBubbles, EventCancelable};
-#[cfg(feature = "webgl_backtrace")]
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::node::NodeTraits;
 #[cfg(feature = "webxr")]
@@ -220,11 +220,30 @@ impl WebGLRenderingContext {
         size: Size2D<u32>,
         attrs: GLContextAttributes,
     ) -> Result<WebGLRenderingContext, String> {
+        Self::new_inherited_with_channel(
+            window.webgl_chan(),
+            window.webview_id().into(),
+            canvas,
+            webgl_version,
+            size,
+            attrs,
+        )
+    }
+
+    #[cfg_attr(crown, expect(crown::unrooted_must_root))]
+    pub(crate) fn new_inherited_with_channel(
+        webgl_chan: Option<WebGLChan>,
+        painter_id: PainterId,
+        canvas: HTMLCanvasElementOrOffscreenCanvas,
+        webgl_version: WebGLVersion,
+        size: Size2D<u32>,
+        attrs: GLContextAttributes,
+    ) -> Result<WebGLRenderingContext, String> {
         if pref!(webgl_testing_context_creation_error) {
             return Err("WebGL context creation error forced by pref `webgl.testing.context_creation_error`".into());
         }
 
-        let webgl_chan = match window.webgl_chan() {
+        let webgl_chan = match webgl_chan {
             Some(chan) => chan,
             None => return Err("WebGL initialization failed early on".into()),
         };
@@ -232,7 +251,7 @@ impl WebGLRenderingContext {
         let (sender, receiver) = webgl_channel().unwrap();
         webgl_chan
             .send(WebGLMsg::CreateContext(
-                window.webview_id().into(),
+                painter_id,
                 webgl_version,
                 size,
                 attrs,
@@ -321,6 +340,38 @@ impl WebGLRenderingContext {
                         event.upcast::<Event>().fire(cx, canvas.upcast());
                     },
                 }
+                None
+            },
+        }
+    }
+
+    #[cfg_attr(crown, expect(crown::unrooted_must_root))]
+    pub(crate) fn new_for_worker(
+        cx: &mut JSContext,
+        global: &GlobalScope,
+        webgl_chan: Option<WebGLChan>,
+        painter_id: Option<PainterId>,
+        canvas: &RootedHTMLCanvasElementOrOffscreenCanvas,
+        webgl_version: WebGLVersion,
+        size: Size2D<u32>,
+        attrs: GLContextAttributes,
+    ) -> Option<DomRoot<WebGLRenderingContext>> {
+        let Some(painter_id) = painter_id else {
+            error!("Couldn't create worker WebGLRenderingContext: missing parent painter");
+            return None;
+        };
+
+        match WebGLRenderingContext::new_inherited_with_channel(
+            webgl_chan,
+            painter_id,
+            HTMLCanvasElementOrOffscreenCanvas::from(canvas),
+            webgl_version,
+            size,
+            attrs,
+        ) {
+            Ok(ctx) => Some(reflect_dom_object_with_cx(Box::new(ctx), global, cx)),
+            Err(msg) => {
+                error!("Couldn't create worker WebGLRenderingContext: {}", msg);
                 None
             },
         }

@@ -32,7 +32,7 @@ use servo_base::Epoch;
 use servo_base::generic_channel::{GenericCallback, GenericReceiver, GenericSender, SendResult};
 use servo_base::id::{
     BroadcastChannelRouterId, BrowsingContextId, HistoryStateId, MessagePortId,
-    MessagePortRouterId, PipelineId, ScriptEventLoopId, ServiceWorkerId,
+    MessagePortRouterId, PainterId, PipelineId, ScriptEventLoopId, ServiceWorkerId,
     ServiceWorkerRegistrationId, WebViewId,
 };
 use servo_canvas_traits::canvas::{CanvasId, CanvasMsg};
@@ -533,6 +533,8 @@ pub struct WorkerGlobalScopeInit {
     pub unminify_js: bool,
     /// Handle for communicating messages to the WebGL thread, if available.
     pub webgl_chan: Option<WebGLChan>,
+    /// Painter associated with the parent window's WebGL surface, if available.
+    pub webgl_painter_id: Option<PainterId>,
 }
 
 /// Common entities representing a network load origin

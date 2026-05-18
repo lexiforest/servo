@@ -42,6 +42,9 @@ pub(crate) struct ServiceWorkerContainer {
     eventtarget: EventTarget,
     controller: MutNullableDom<ServiceWorker>,
 
+    #[conditional_malloc_size_of]
+    ready_promise: Rc<Promise>,
+
     /// Pending results for
     /// <https://w3c.github.io/ServiceWorker/#algorithms>
     #[conditional_malloc_size_of]
@@ -53,18 +56,20 @@ pub(crate) struct ServiceWorkerContainer {
 }
 
 impl ServiceWorkerContainer {
-    fn new_inherited() -> ServiceWorkerContainer {
+    fn new_inherited(ready_promise: Rc<Promise>) -> ServiceWorkerContainer {
         ServiceWorkerContainer {
             eventtarget: EventTarget::new_inherited(),
             controller: Default::default(),
+            ready_promise,
             pending_algorithm_results: Default::default(),
             callback: Default::default(),
         }
     }
 
     pub(crate) fn new(cx: &mut JSContext, global: &GlobalScope) -> DomRoot<ServiceWorkerContainer> {
+        let ready_promise = Promise::new(cx, global);
         reflect_dom_object_with_cx(
-            Box::new(ServiceWorkerContainer::new_inherited()),
+            Box::new(ServiceWorkerContainer::new_inherited(ready_promise)),
             global,
             cx,
         )
@@ -120,6 +125,10 @@ impl ServiceWorkerContainer {
                             active_worker,
                             CanGc::from_cx(cx),
                         );
+
+                        if registration.is_active() {
+                            self.ready_promise.resolve_native(cx, &*registration);
+                        }
 
                         // TODO Step 2.3: Else, set convertedValue to value, in equivalentJob’s client’s Realm.
 
@@ -316,6 +325,11 @@ impl ServiceWorkerContainer {
 }
 
 impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContainer {
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-container-ready-attribute>
+    fn Ready(&self) -> Rc<Promise> {
+        self.ready_promise.clone()
+    }
+
     /// <https://w3c.github.io/ServiceWorker/#service-worker-container-controller-attribute>
     fn GetController(&self) -> Option<DomRoot<ServiceWorker>> {
         None
@@ -524,4 +538,7 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
         // Step 9: Return promise.
         promise
     }
+
+    event_handler!(message, GetOnmessage, SetOnmessage);
+    event_handler!(messageerror, GetOnmessageerror, SetOnmessageerror);
 }
