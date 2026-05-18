@@ -5,6 +5,7 @@
 #[path = "2d/mod.rs"]
 mod canvas2d;
 pub(crate) use canvas2d::*;
+pub(crate) mod canvasfingerprint;
 pub(crate) mod canvas_context;
 pub(crate) mod imagebitmap;
 pub(crate) mod imagebitmaprenderingcontext;

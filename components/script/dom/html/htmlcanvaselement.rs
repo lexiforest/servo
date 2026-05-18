@@ -45,6 +45,7 @@ use crate::dom::bindings::root::{Dom, DomRoot, LayoutDom};
 use crate::dom::bindings::str::{DOMString, USVString};
 use crate::dom::blob::Blob;
 use crate::dom::canvasrenderingcontext2d::CanvasRenderingContext2D;
+use crate::dom::canvasfingerprint::apply_canvas_export_noise;
 use crate::dom::document::Document;
 use crate::dom::element::{AttributeMutation, Element};
 #[cfg(not(feature = "webgpu"))]
@@ -526,6 +527,7 @@ impl HTMLCanvasElementMethods<crate::DomTypeHolder> for HTMLCanvasElement {
         let Some(mut snapshot) = self.get_image_data() else {
             return Ok(USVString("data:,".into()));
         };
+        apply_canvas_export_noise(&mut snapshot, "html-canvas-export");
 
         let image_type = EncodedImageType::from(mime_type.to_string());
 
@@ -583,6 +585,10 @@ impl HTMLCanvasElementMethods<crate::DomTypeHolder> for HTMLCanvasElement {
             .insert(callback_id, callback);
         let quality = Self::maybe_quality(quality);
         let image_type = EncodedImageType::from(mime_type.to_string());
+        let result = result.map(|mut snapshot| {
+            apply_canvas_export_noise(&mut snapshot, "html-canvas-export");
+            snapshot
+        });
 
         self.global()
             .task_manager()

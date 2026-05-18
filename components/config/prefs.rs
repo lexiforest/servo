@@ -419,6 +419,14 @@ pub struct Preferences {
     pub bimp_js_webgl_masked_vendor: String,
     /// Bimp persona override for masked WebGL renderer strings.
     pub bimp_js_webgl_masked_renderer: String,
+    /// Bimp persona seed used to stabilize Canvas 2D export fingerprints.
+    pub bimp_js_canvas_noise_seed: String,
+    /// Whether Canvas 2D export readback noise is enabled.
+    pub bimp_js_canvas_noise_enabled: bool,
+    /// Maximum per-channel Canvas 2D export noise amplitude.
+    pub bimp_js_canvas_noise_amplitude: i64,
+    /// Whether to align the tiny Blink Canvas 2D low-entropy probe.
+    pub bimp_js_canvas_blink_low_entropy_probe: bool,
     /// Whether Servo's internal WebDriver helper functions are exposed on Window.
     pub bimp_webdriver_helpers_enabled: bool,
     /// Whether or not the viewport meta tag is enabled.
@@ -629,6 +637,10 @@ impl Preferences {
             bimp_js_webgl_renderer: String::new(),
             bimp_js_webgl_masked_vendor: String::new(),
             bimp_js_webgl_masked_renderer: String::new(),
+            bimp_js_canvas_noise_seed: String::new(),
+            bimp_js_canvas_noise_enabled: false,
+            bimp_js_canvas_noise_amplitude: 0,
+            bimp_js_canvas_blink_low_entropy_probe: false,
             bimp_webdriver_helpers_enabled: false,
             viewport_meta_enabled: false,
             log_filter: String::new(),

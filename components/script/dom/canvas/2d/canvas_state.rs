@@ -58,6 +58,7 @@ use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::num::Finite;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::DOMString;
+use crate::dom::canvasfingerprint::apply_blink_low_entropy_canvas_probe;
 use crate::dom::canvasgradient::{CanvasGradient, CanvasGradientStyle, ToFillOrStrokeStyle};
 use crate::dom::canvaspattern::CanvasPattern;
 use crate::dom::dommatrix::DOMMatrix;
@@ -1866,6 +1867,7 @@ impl CanvasState {
                 },
                 SnapshotPixelFormat::RGBA,
             );
+            apply_blink_low_entropy_canvas_probe(&mut snapshot);
             Some(snapshot.into())
         } else {
             None

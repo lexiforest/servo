@@ -34,6 +34,7 @@ use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::structuredclone::StructuredData;
 use crate::dom::bindings::transferable::Transferable;
 use crate::dom::blob::Blob;
+use crate::dom::canvasfingerprint::apply_canvas_export_noise;
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::html::htmlcanvaselement::HTMLCanvasElement;
@@ -552,6 +553,7 @@ impl OffscreenCanvasMethods<crate::DomTypeHolder> for OffscreenCanvas {
             promise.reject_error(Error::InvalidState(None), can_gc);
             return promise;
         };
+        apply_canvas_export_noise(&mut snapshot, "offscreen-canvas-export");
 
         // Step 7. Run these steps in parallel:
         // Step 7.1. Let file be a serialization of bitmap as a file, with
