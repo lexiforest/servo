@@ -91,6 +91,7 @@ use crate::dom::bindings::codegen::Bindings::NotificationBinding::NotificationPe
 use crate::dom::bindings::codegen::Bindings::PermissionStatusBinding::{
     PermissionName, PermissionState,
 };
+use crate::dom::bindings::codegen::Bindings::ServiceWorkerBinding::ServiceWorkerState;
 use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::codegen::Bindings::WorkerGlobalScopeBinding::WorkerGlobalScopeMethods;
 use crate::dom::bindings::conversions::{root_from_object, root_from_object_static};
@@ -861,7 +862,7 @@ impl GlobalScope {
         registration_id: ServiceWorkerRegistrationId,
         installing_worker: Option<ServiceWorkerId>,
         _waiting_worker: Option<ServiceWorkerId>,
-        _active_worker: Option<ServiceWorkerId>,
+        active_worker: Option<ServiceWorkerId>,
         can_gc: CanGc,
     ) -> DomRoot<ServiceWorkerRegistration> {
         // Step 1
@@ -884,13 +885,29 @@ impl GlobalScope {
 
         // TODO: 2.7 (waiting worker)
 
-        // TODO: 2.8 (active worker)
+        // Step 2.8
+        if let Some(worker_id) = active_worker {
+            let worker = self.get_serviceworker(script_url, scope, worker_id, can_gc);
+            worker.set_transition_state(ServiceWorkerState::Activated, can_gc);
+            new_registration.set_active(&worker);
+        }
 
         // Step 2.9
         registrations.insert(registration_id, Dom::from_ref(&*new_registration));
 
         // Step 3
         new_registration
+    }
+
+    pub(crate) fn active_serviceworker_registration(
+        &self,
+    ) -> Option<DomRoot<ServiceWorkerRegistration>> {
+        self.registration_map
+            .borrow()
+            .iter()
+            .map(|(_, registration)| registration)
+            .find(|registration| registration.is_active())
+            .map(|registration| DomRoot::from_ref(&**registration))
     }
 
     /// <https://w3c.github.io/ServiceWorker/#get-the-service-worker-object>

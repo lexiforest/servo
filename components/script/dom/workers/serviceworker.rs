@@ -6,30 +6,36 @@ use std::cell::Cell;
 
 use dom_struct::dom_struct;
 use js::context::JSContext;
-use js::jsapi::{Heap, JSObject};
+use js::jsapi::{Heap, JSObject, JSAutoRealm};
+use js::jsval::UndefinedValue;
 use js::rust::{CustomAutoRooter, CustomAutoRooterGuard, HandleValue};
+use servo_base::generic_channel::GenericCallback;
 use servo_base::id::ServiceWorkerId;
-use servo_constellation_traits::{DOMMessage, ScriptToConstellationMessage};
+use servo_constellation_traits::{ClientDOMMessage, DOMMessage, ScriptToConstellationMessage};
 use servo_url::ServoUrl;
 
 use crate::dom::abstractworker::SimpleWorkerErrorHandler;
 use crate::dom::bindings::cell::DomRefCell;
 use crate::dom::bindings::codegen::Bindings::MessagePortBinding::StructuredSerializeOptions;
+use crate::dom::bindings::codegen::Bindings::NavigatorBinding::NavigatorMethods;
 use crate::dom::bindings::codegen::Bindings::ServiceWorkerBinding::{
     ServiceWorkerMethods, ServiceWorkerState,
 };
+use crate::dom::bindings::codegen::Bindings::WindowBinding::WindowMethods;
 use crate::dom::bindings::error::{Error, ErrorResult};
 use crate::dom::bindings::inheritance::Castable;
 use crate::dom::bindings::refcounted::Trusted;
-use crate::dom::bindings::reflector::{DomGlobal, reflect_dom_object};
+use crate::dom::bindings::reflector::{reflect_dom_object, DomGlobal, DomObject};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::USVString;
 use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::RootedTraceableBox;
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
+use crate::dom::messageevent::MessageEvent;
 use crate::script_runtime::CanGc;
 use crate::task::TaskOnce;
+use crate::task_source::SendableTaskSource;
 
 pub(crate) type TrustedServiceWorkerAddress = Trusted<ServiceWorker>;
 
@@ -106,9 +112,58 @@ impl ServiceWorker {
         // Step 7
         let data = structuredclone::write(cx.into(), message, Some(transfer))?;
         let incumbent = GlobalScope::incumbent().expect("no incumbent global?");
+        let trusted_worker = Trusted::new(self);
+        let task_source: SendableTaskSource = self
+            .global()
+            .task_manager()
+            .dom_manipulation_task_source()
+            .into();
+        let client_sender = GenericCallback::new(move |message| match message {
+            Ok(ClientDOMMessage { origin, data }) => {
+                let trusted_worker = trusted_worker.clone();
+                task_source.queue(task!(deliver_serviceworker_message: move || {
+                    let service_worker = trusted_worker.root();
+                    let global = service_worker.global();
+                    let window = global.as_window();
+                    let navigator = window.Navigator();
+                    let container = navigator.ServiceWorker();
+
+                    let cx = window.get_cx();
+                    let obj = window.reflector().get_jsobject();
+                    let _ac = JSAutoRealm::new(*cx, obj.get());
+                    rooted!(in(*cx) let mut message_clone = UndefinedValue());
+                    if let Ok(ports) = structuredclone::read(
+                        window.upcast(),
+                        data,
+                        message_clone.handle_mut(),
+                        CanGc::deprecated_note(),
+                    ) {
+                        MessageEvent::dispatch_jsval(
+                            container.upcast(),
+                            window.upcast(),
+                            message_clone.handle(),
+                            Some(&origin.ascii_serialization()),
+                            None,
+                            ports,
+                            CanGc::deprecated_note(),
+                        );
+                    } else {
+                        MessageEvent::dispatch_error(
+                            container.upcast(),
+                            window.upcast(),
+                            CanGc::deprecated_note(),
+                        );
+                    }
+                }));
+            },
+            Err(err) => warn!("Error receiving ServiceWorker client message: {:?}", err),
+        })
+        .expect("Failed to create ServiceWorker client callback");
         let msg_vec = DOMMessage {
             origin: incumbent.origin().immutable().clone(),
             data,
+            client_sender: Some(client_sender),
+            client_url: Some(incumbent.creation_url()),
         };
         let _ = self.global().script_to_constellation_chan().send(
             ScriptToConstellationMessage::ForwardDOMMessage(msg_vec, self.scope_url.clone()),

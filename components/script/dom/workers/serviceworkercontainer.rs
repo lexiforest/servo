@@ -16,7 +16,7 @@ use crate::dom::bindings::codegen::Bindings::ServiceWorkerContainerBinding::{
     RegistrationOptions, ServiceWorkerContainerMethods,
 };
 use crate::dom::bindings::error::Error;
-use crate::dom::bindings::refcounted::TrustedPromise;
+use crate::dom::bindings::refcounted::{Trusted, TrustedPromise};
 use crate::dom::bindings::reflector::{DomGlobal, reflect_dom_object};
 use crate::dom::bindings::root::{Dom, DomRoot, MutNullableDom};
 use crate::dom::bindings::str::USVString;
@@ -35,22 +35,33 @@ pub(crate) struct ServiceWorkerContainer {
     eventtarget: EventTarget,
     controller: MutNullableDom<ServiceWorker>,
     client: Dom<Client>,
+    #[conditional_malloc_size_of]
+    ready_promise: Rc<Promise>,
 }
 
 impl ServiceWorkerContainer {
-    fn new_inherited(client: &Client) -> ServiceWorkerContainer {
+    fn new_inherited(
+        global: &GlobalScope,
+        client: &Client,
+        can_gc: CanGc,
+    ) -> ServiceWorkerContainer {
         ServiceWorkerContainer {
             eventtarget: EventTarget::new_inherited(),
             controller: Default::default(),
             client: Dom::from_ref(client),
+            ready_promise: Promise::new(global, can_gc),
         }
     }
 
     #[cfg_attr(crown, expect(crown::unrooted_must_root))]
     pub(crate) fn new(global: &GlobalScope, can_gc: CanGc) -> DomRoot<ServiceWorkerContainer> {
         let client = Client::new(global.as_window(), can_gc);
-        let container = ServiceWorkerContainer::new_inherited(&client);
+        let container = ServiceWorkerContainer::new_inherited(global, &client, can_gc);
         reflect_dom_object(Box::new(container), global, can_gc)
+    }
+
+    fn resolve_ready(&self, registration: &ServiceWorkerRegistration, can_gc: CanGc) {
+        self.ready_promise.resolve_native(registration, can_gc);
     }
 }
 
@@ -58,6 +69,15 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
     /// <https://w3c.github.io/ServiceWorker/#service-worker-container-controller-attribute>
     fn GetController(&self) -> Option<DomRoot<ServiceWorker>> {
         self.client.get_controller()
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-container-ready-attribute>
+    fn Ready(&self) -> Rc<Promise> {
+        let global = self.client.global();
+        if let Some(registration) = global.active_serviceworker_registration() {
+            self.resolve_ready(&registration, CanGc::deprecated_note());
+        }
+        self.ready_promise.clone()
     }
 
     /// <https://w3c.github.io/ServiceWorker/#dom-serviceworkercontainer-register> - A
@@ -152,6 +172,7 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
         // from steps running "in-parallel" from here in the serviceworker manager.
         let mut handler = RegisterJobResultHandler {
             trusted_promise: Some(TrustedPromise::new(promise.clone())),
+            trusted_container: Some(Trusted::new(self)),
             task_source: global.task_manager().dom_manipulation_task_source().into(),
         };
 
@@ -182,12 +203,16 @@ impl ServiceWorkerContainerMethods<crate::DomTypeHolder> for ServiceWorkerContai
         // A: Step 7
         promise
     }
+
+    event_handler!(message, GetOnmessage, SetOnmessage);
+    event_handler!(messageerror, GetOnmessageerror, SetOnmessageerror);
 }
 
 /// Callback for resolve/reject job promise for Register.
 /// <https://w3c.github.io/ServiceWorker/#register>
 struct RegisterJobResultHandler {
     trusted_promise: Option<TrustedPromise>,
+    trusted_container: Option<Trusted<ServiceWorkerContainer>>,
     task_source: SendableTaskSource,
 }
 
@@ -229,10 +254,15 @@ impl RegisterJobResultHandler {
                     .trusted_promise
                     .take()
                     .expect("No promise to resolve for SW Register job.");
+                let container = self
+                    .trusted_container
+                    .take()
+                    .expect("No ServiceWorkerContainer to resolve ready promise.");
 
                 // Step 1
                 self.task_source.queue(task!(resolve_promise: move || {
                     let promise = promise.root();
+                    let container = container.root();
                     let global = promise.global();
                     let _ac = enter_realm(&*global);
 
@@ -254,6 +284,8 @@ impl RegisterJobResultHandler {
                         active_worker,
                         CanGc::deprecated_note()
                     );
+
+                    container.resolve_ready(&registration, CanGc::deprecated_note());
 
                     // Step 1.4
                     promise.resolve_native(&*registration, CanGc::deprecated_note());

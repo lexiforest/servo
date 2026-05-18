@@ -40,6 +40,7 @@ use crate::dom::bindings::structuredclone;
 use crate::dom::bindings::trace::CustomTraceable;
 use crate::dom::bindings::utils::define_all_exposed_interfaces;
 use crate::dom::csp::Violation;
+use crate::dom::client::Client;
 use crate::dom::debugger::debuggerglobalscope::DebuggerGlobalScope;
 use crate::dom::dedicatedworkerglobalscope::AutoWorkerReset;
 use crate::dom::event::Event;
@@ -516,6 +517,16 @@ impl ServiceWorkerGlobalScope {
                 let scope = self.upcast::<WorkerGlobalScope>();
                 let target = self.upcast();
                 let _ac = enter_realm(scope);
+                let source = msg.client_sender.clone().map(|sender| {
+                    Client::new_for_serviceworker(
+                        scope.upcast(),
+                        msg.client_url
+                            .clone()
+                            .unwrap_or_else(|| scope.upcast::<GlobalScope>().creation_url()),
+                        Some(sender),
+                        CanGc::from_cx(cx),
+                    )
+                });
                 rooted!(&in(cx) let mut message = UndefinedValue());
                 if let Ok(ports) = structuredclone::read(
                     scope.upcast(),
@@ -528,6 +539,7 @@ impl ServiceWorkerGlobalScope {
                         scope.upcast(),
                         message.handle(),
                         ports,
+                        source.as_ref().map(|client| &**client),
                         CanGc::from_cx(cx),
                     );
                 } else {

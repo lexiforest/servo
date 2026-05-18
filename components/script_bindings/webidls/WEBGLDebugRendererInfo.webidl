@@ -6,7 +6,7 @@
  * https://www.khronos.org/registry/webgl/extensions/WEBGL_debug_renderer_info/
  */
 
-[LegacyNoInterfaceObject, Exposed=Window]
+[LegacyNoInterfaceObject, Exposed=(Window,Worker)]
 interface WEBGLDebugRendererInfo {
   const GLenum UNMASKED_VENDOR_WEBGL   = 0x9245;
   const GLenum UNMASKED_RENDERER_WEBGL = 0x9246;

@@ -519,10 +519,12 @@ impl WebGLThread {
         // Creating a new GLContext may make the current bound context_id dirty.
         // Clear it to ensure that  make_current() is called in subsequent commands.
         self.bound_context_id = None;
-        let painter_surfman_details = self
-            .painter_surfman_details_map
-            .get(painter_id)
-            .expect("PainterSurfmanDetails not found for PainterId");
+        let Some(painter_surfman_details) = self.painter_surfman_details_map.get(painter_id)
+        else {
+            return Err(format!(
+                "PainterSurfmanDetails not found for PainterId {painter_id:?}"
+            ));
+        };
         let api_type = match painter_surfman_details.connection.gl_api() {
             surfman::GLApi::GL => GlType::Gl,
             surfman::GLApi::GLES => GlType::Gles,

@@ -32,7 +32,7 @@ use script_bindings::reflector::DomObject;
 use script_bindings::root::rooted_heap_handle;
 use servo_base::cross_process_instant::CrossProcessInstant;
 use servo_base::generic_channel::{GenericSend, GenericSender, RoutedReceiver};
-use servo_base::id::{PipelineId, PipelineNamespace};
+use servo_base::id::{PainterId, PipelineId, PipelineNamespace};
 use servo_canvas_traits::webgl::WebGLChan;
 use servo_constellation_traits::WorkerGlobalScopeInit;
 use servo_url::{MutableOrigin, ServoUrl};
@@ -80,7 +80,7 @@ use crate::dom::trustedtypes::trustedtypepolicyfactory::TrustedTypePolicyFactory
 use crate::dom::types::ImageBitmap;
 #[cfg(feature = "webgpu")]
 use crate::dom::webgpu::identityhub::IdentityHub;
-use crate::dom::window::{base64_atob, base64_btoa};
+use crate::dom::window::{Window, base64_atob, base64_btoa};
 use crate::dom::workerlocation::WorkerLocation;
 use crate::dom::workernavigator::WorkerNavigator;
 use crate::fetch::{CspViolationsProcessor, Fetch, RequestWithGlobalScope, load_whole_resource};
@@ -99,6 +99,15 @@ pub(crate) fn prepare_workerscope_init(
     worker_id: Option<WorkerId>,
     webgl_chan: Option<WebGLChan>,
 ) -> WorkerGlobalScopeInit {
+    let webgl_painter_id = global
+        .downcast::<Window>()
+        .map(|window| window.webview_id().into())
+        .or_else(|| {
+            global
+                .downcast::<WorkerGlobalScope>()
+                .and_then(|worker| worker.webgl_painter_id())
+        });
+
     WorkerGlobalScopeInit {
         resource_threads: global.resource_threads().clone(),
         storage_threads: global.storage_threads().clone(),
@@ -114,6 +123,7 @@ pub(crate) fn prepare_workerscope_init(
         inherited_secure_context: Some(global.is_secure_context()),
         unminify_js: global.unminify_js(),
         webgl_chan,
+        webgl_painter_id,
     }
 }
 
@@ -278,6 +288,10 @@ pub(crate) struct WorkerGlobalScope {
     #[no_trace]
     worker_id: WorkerId,
     #[no_trace]
+    webgl_chan: Option<WebGLChan>,
+    #[no_trace]
+    webgl_painter_id: Option<PainterId>,
+    #[no_trace]
     worker_url: DomRefCell<ServoUrl>,
     #[conditional_malloc_size_of]
     closing: Arc<AtomicBool>,
@@ -377,6 +391,8 @@ impl WorkerGlobalScope {
             ),
             microtask_queue: runtime.microtask_queue.clone(),
             worker_id: init.worker_id,
+            webgl_chan: init.webgl_chan,
+            webgl_painter_id: init.webgl_painter_id,
             worker_name,
             worker_type,
             worker_url: DomRefCell::new(worker_url),
@@ -438,6 +454,14 @@ impl WorkerGlobalScope {
             .as_ref()
             .unwrap()
             .prepare_for_new_child()
+    }
+
+    pub(crate) fn webgl_chan(&self) -> Option<WebGLChan> {
+        self.webgl_chan.clone()
+    }
+
+    pub(crate) fn webgl_painter_id(&self) -> Option<PainterId> {
+        self.webgl_painter_id
     }
 
     pub(crate) fn devtools_receiver(&self) -> Option<&RoutedReceiver<DevtoolScriptControlMsg>> {

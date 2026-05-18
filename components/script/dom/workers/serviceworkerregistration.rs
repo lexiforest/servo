@@ -3,6 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 use std::cell::Cell;
+use std::rc::Rc;
 
 use devtools_traits::WorkerId;
 use dom_struct::dom_struct;
@@ -23,6 +24,7 @@ use crate::dom::bindings::str::{ByteString, USVString};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::navigationpreloadmanager::NavigationPreloadManager;
+use crate::dom::promise::Promise;
 use crate::dom::serviceworker::ServiceWorker;
 use crate::dom::window::Window;
 use crate::dom::workerglobalscope::prepare_workerscope_init;
@@ -88,6 +90,10 @@ impl ServiceWorkerRegistration {
 
     pub(crate) fn set_installing(&self, worker: &ServiceWorker) {
         *self.installing.borrow_mut() = Some(Dom::from_ref(worker));
+    }
+
+    pub(crate) fn set_active(&self, worker: &ServiceWorker) {
+        *self.active.borrow_mut() = Some(Dom::from_ref(worker));
     }
 
     pub(crate) fn get_navigation_preload_header_value(&self) -> Option<ByteString> {
@@ -220,5 +226,13 @@ impl ServiceWorkerRegistrationMethods<crate::DomTypeHolder> for ServiceWorkerReg
         self.navigation_preload.or_init(|| {
             NavigationPreloadManager::new(&self.global(), self, CanGc::deprecated_note())
         })
+    }
+
+    /// <https://w3c.github.io/ServiceWorker/#service-worker-registration-unregister>
+    fn Unregister(&self) -> Rc<Promise> {
+        self.set_uninstalling(true);
+        let promise = Promise::new(&self.global(), CanGc::deprecated_note());
+        promise.resolve_native(&true, CanGc::deprecated_note());
+        promise
     }
 }

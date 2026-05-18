@@ -155,6 +155,8 @@ impl Worker {
             WorkerScriptMsg::DOMMessage(MessageData {
                 origin: self.global().origin().immutable().clone(),
                 data: Box::new(data),
+                client_sender: None,
+                client_url: None,
             }),
         ));
         Ok(())

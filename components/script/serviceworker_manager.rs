@@ -65,11 +65,18 @@ impl ServiceWorker {
 
     /// Forward a DOM message to the running service worker scope.
     fn forward_dom_message(&self, msg: DOMMessage) {
-        let DOMMessage { origin, data } = msg;
+        let DOMMessage {
+            origin,
+            data,
+            client_sender,
+            client_url,
+        } = msg;
         let _ = self.sender.send(ServiceWorkerScriptMsg::CommonWorker(
             WorkerScriptMsg::DOMMessage(MessageData {
                 origin,
                 data: Box::new(data),
+                client_sender,
+                client_url,
             }),
         ));
     }
@@ -423,11 +430,11 @@ impl ServiceWorkerManager {
             // Since we've just started the worker thread, ensure we can shut it down later.
             registration.note_worker_thread(join_handle, control_sender, context, closing);
 
-            // Step 19, run Install.
-
-            // Install: Step 4, run Update Registration State.
+            // Servo does not yet run the full install/activate lifecycle. Activate the
+            // worker immediately so clients that wait on ServiceWorkerContainer.ready
+            // can use the registration.
             registration
-                .update_registration_state(RegistrationUpdateTarget::Installing, new_worker);
+                .update_registration_state(RegistrationUpdateTarget::Active, new_worker);
 
             // Install: Step 7, run Resolve Job Promise.
             let client = job.client.clone();

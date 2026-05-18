@@ -32,7 +32,7 @@ use servo_base::Epoch;
 use servo_base::generic_channel::{GenericCallback, GenericReceiver, GenericSender, SendResult};
 use servo_base::id::{
     BroadcastChannelRouterId, BrowsingContextId, HistoryStateId, MessagePortId,
-    MessagePortRouterId, PipelineId, ScriptEventLoopId, ServiceWorkerId,
+    MessagePortRouterId, PainterId, PipelineId, ScriptEventLoopId, ServiceWorkerId,
     ServiceWorkerRegistrationId, WebViewId,
 };
 use servo_canvas_traits::canvas::{CanvasId, CanvasMsg};
@@ -227,6 +227,15 @@ pub struct ScopeThings {
     pub webview_id: WebViewId,
 }
 
+/// Message that gets passed from a service worker scope back to a client.
+#[derive(Debug, Deserialize, Serialize)]
+pub struct ClientDOMMessage {
+    /// The origin of the message
+    pub origin: ImmutableOrigin,
+    /// The payload of the message
+    pub data: StructuredSerializedData,
+}
+
 /// Message that gets passed to service worker scope on postMessage
 #[derive(Debug, Deserialize, Serialize)]
 pub struct DOMMessage {
@@ -234,6 +243,10 @@ pub struct DOMMessage {
     pub origin: ImmutableOrigin,
     /// The payload of the message
     pub data: StructuredSerializedData,
+    /// Callback used by service-worker `Client.postMessage()` to reply to the original client.
+    pub client_sender: Option<GenericCallback<ClientDOMMessage>>,
+    /// Creation URL of the client that posted the message.
+    pub client_url: Option<ServoUrl>,
 }
 
 /// Channels to allow service worker manager to communicate with constellation and resource thread
@@ -487,6 +500,8 @@ pub struct WorkerGlobalScopeInit {
     pub unminify_js: bool,
     /// Handle for communicating messages to the WebGL thread, if available.
     pub webgl_chan: Option<WebGLChan>,
+    /// Painter associated with the parent window's WebGL surface, if available.
+    pub webgl_painter_id: Option<PainterId>,
 }
 
 /// Common entities representing a network load origin

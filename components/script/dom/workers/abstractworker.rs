@@ -2,8 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
-use servo_constellation_traits::StructuredSerializedData;
-use servo_url::ImmutableOrigin;
+use servo_base::generic_channel::GenericCallback;
+use servo_constellation_traits::{ClientDOMMessage, StructuredSerializedData};
+use servo_url::{ImmutableOrigin, ServoUrl};
 
 use crate::dom::bindings::refcounted::Trusted;
 use crate::dom::bindings::reflector::DomObject;
@@ -21,6 +22,8 @@ pub(crate) enum WorkerScriptMsg {
 pub(crate) struct MessageData {
     pub origin: ImmutableOrigin,
     pub data: Box<StructuredSerializedData>,
+    pub client_sender: Option<GenericCallback<ClientDOMMessage>>,
+    pub client_url: Option<ServoUrl>,
 }
 
 pub(crate) struct SimpleWorkerErrorHandler<T: DomObject> {
