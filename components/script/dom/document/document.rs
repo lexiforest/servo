@@ -3671,6 +3671,19 @@ impl Document {
         let Ok(message_literal) = serde_json::to_string(&message) else {
             return;
         };
+        let speech_voices_pref = pref!(bimp_js_speech_voices);
+        let mut speech_voices = speech_voices_pref
+            .split('|')
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>();
+        if speech_voices.is_empty() {
+            speech_voices.extend(["Samantha".to_owned(), "Alex".to_owned()]);
+        }
+        let Ok(speech_voices_literal) = serde_json::to_string(&speech_voices) else {
+            return;
+        };
 
         let source = format!(
             r#"(function() {{
@@ -3684,6 +3697,9 @@ impl Document {
     var nativeNumberToFixed = Number.prototype.toFixed;
     var nativeErrorStackDescriptor = nativeGetOwnPropertyDescriptor(Error.prototype, "stack");
     var nativeErrorStackGetter = nativeErrorStackDescriptor && nativeErrorStackDescriptor.get;
+    var bimpSpeechVoiceNames = {speech_voices_literal};
+    var bimpOfflineAudioCompleteListeners = typeof WeakMap == "function" ? new WeakMap() : null;
+    var bimpOfflineAudioRenderedContexts = typeof WeakSet == "function" ? new WeakSet() : null;
     function personaToFixed(fractionDigits) {{
         try {{
             return nativeApply(nativeNumberToFixed, this, arguments);
@@ -3713,13 +3729,667 @@ impl Document {
         }}
         return rawStack;
     }}
+    function bimpChromeTimestampSeconds() {{
+        if (globalThis.performance && performance.timeOrigin) {{
+            return performance.timeOrigin / 1000;
+        }}
+        return Date.now() / 1000;
+    }}
+    function bimpChromeLoadTimes() {{
+        var requestTime = bimpChromeTimestampSeconds();
+        return {{
+            requestTime: requestTime,
+            startLoadTime: requestTime,
+            commitLoadTime: requestTime,
+            finishDocumentLoadTime: 0,
+            finishLoadTime: 0,
+            firstPaintTime: 0,
+            firstPaintAfterLoadTime: 0,
+            navigationType: "Other",
+            wasFetchedViaSpdy: false,
+            wasNpnNegotiated: false,
+            npnNegotiatedProtocol: "",
+            wasAlternateProtocolAvailable: false,
+            connectionInfo: "unknown"
+        }};
+    }}
+    function bimpChromeCsi() {{
+        var start = Math.round(bimpChromeTimestampSeconds() * 1000);
+        var pageT = globalThis.performance && performance.now ? performance.now() : 0;
+        return {{
+            startE: start,
+            onloadT: 0,
+            pageT: Math.round(pageT * 100) / 100,
+            tran: 15
+        }};
+    }}
+    var bimpChromeAppMethods = {{
+        getDetails() {{
+            return null;
+        }},
+        getIsInstalled() {{
+            return false;
+        }},
+        installState() {{
+            var callback = arguments[0];
+            if (typeof callback == "function") {{
+                setTimeout(function() {{
+                    callback("not_installed");
+                }}, 0);
+            }}
+        }},
+        runningState() {{
+            return "cannot_run";
+        }}
+    }};
+    function bimpDefineChromeFunction(fn, name, length, hasPrototype) {{
+        nativeDefineProperty(fn, "name", {{ value: name, configurable: true }});
+        nativeDefineProperty(fn, "length", {{ value: length, configurable: true }});
+        if (!hasPrototype) {{
+            try {{
+                delete fn.prototype;
+            }} catch (_) {{}}
+        }}
+        return fn;
+    }}
+    function bimpInstallChromeObject() {{
+        if ("chrome" in globalThis) {{
+            return;
+        }}
+        var installState = {{
+            DISABLED: "disabled",
+            INSTALLED: "installed",
+            NOT_INSTALLED: "not_installed"
+        }};
+        var runningState = {{
+            CANNOT_RUN: "cannot_run",
+            READY_TO_RUN: "ready_to_run",
+            RUNNING: "running"
+        }};
+        var app = {{}};
+        nativeDefineProperty(app, "isInstalled", {{ value: false, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "getDetails", {{ value: bimpChromeAppMethods.getDetails, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "getIsInstalled", {{ value: bimpChromeAppMethods.getIsInstalled, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "installState", {{ value: bimpChromeAppMethods.installState, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "runningState", {{ value: bimpChromeAppMethods.runningState, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "InstallState", {{ value: installState, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(app, "RunningState", {{ value: runningState, writable: true, enumerable: true, configurable: true }});
+        var chromeObject = {{}};
+        nativeDefineProperty(chromeObject, "loadTimes", {{ value: bimpChromeLoadTimes, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(chromeObject, "csi", {{ value: bimpChromeCsi, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(chromeObject, "app", {{ value: app, writable: true, enumerable: true, configurable: true }});
+        nativeDefineProperty(globalThis, "chrome", {{
+            value: chromeObject,
+            writable: true,
+            enumerable: false,
+            configurable: false
+        }});
+    }}
+    function bimpSpeechLang() {{
+        if (globalThis.navigator && navigator.language) {{
+            return String(navigator.language);
+        }}
+        return "en-US";
+    }}
+    function bimpSpeechSynthesisVoice() {{
+        throw new TypeError("Illegal constructor");
+    }}
+    function bimpSpeechSynthesis() {{
+        throw new TypeError("Illegal constructor");
+    }}
+    function bimpSpeechVoice(name, index, language) {{
+        var voice = Object.create(bimpSpeechSynthesisVoice.prototype);
+        nativeDefineProperty(voice, "voiceURI", {{
+            value: name,
+            enumerable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(voice, "name", {{
+            value: name,
+            enumerable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(voice, "lang", {{
+            value: language,
+            enumerable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(voice, "localService", {{
+            value: true,
+            enumerable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(voice, "default", {{
+            value: index === 0,
+            enumerable: true,
+            configurable: true
+        }});
+        return voice;
+    }}
+    function bimpInstallSpeechSynthesis() {{
+        if ("speechSynthesis" in globalThis) {{
+            return;
+        }}
+        var language = bimpSpeechLang();
+        var names = Array.isArray(bimpSpeechVoiceNames) && bimpSpeechVoiceNames.length ?
+            bimpSpeechVoiceNames :
+            ["Samantha", "Alex"];
+        var voices = names.map(function(name, index) {{
+            return bimpSpeechVoice(String(name), index, language);
+        }});
+        var listeners = [];
+        var onvoiceschanged = null;
+        var speechMethods = {{
+            getVoices() {{
+                return voices.slice();
+            }},
+            pause() {{}},
+            resume() {{}},
+            cancel() {{}},
+            speak() {{}}
+        }};
+        var getVoices = speechMethods.getVoices;
+        var pause = speechMethods.pause;
+        var resume = speechMethods.resume;
+        var cancel = speechMethods.cancel;
+        var speak = speechMethods.speak;
+        bimpDefineChromeFunction(getVoices, "getVoices", 0, false);
+        bimpDefineChromeFunction(pause, "pause", 0, false);
+        bimpDefineChromeFunction(resume, "resume", 0, false);
+        bimpDefineChromeFunction(cancel, "cancel", 0, false);
+        bimpDefineChromeFunction(speak, "speak", 1, false);
+        bimpSpeechSynthesisVoice.prototype = {{}};
+        nativeDefineProperty(bimpSpeechSynthesisVoice.prototype, "constructor", {{
+            value: bimpSpeechSynthesisVoice,
+            writable: true,
+            configurable: true
+        }});
+        if (typeof Symbol == "function" && Symbol.toStringTag) {{
+            nativeDefineProperty(bimpSpeechSynthesisVoice.prototype, Symbol.toStringTag, {{
+                value: "SpeechSynthesisVoice",
+                configurable: true
+            }});
+        }}
+        bimpSpeechSynthesis.prototype = Object.create(Object.prototype);
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "constructor", {{
+            value: bimpSpeechSynthesis,
+            writable: true,
+            configurable: true
+        }});
+        if (typeof Symbol == "function" && Symbol.toStringTag) {{
+            nativeDefineProperty(bimpSpeechSynthesis.prototype, Symbol.toStringTag, {{
+                value: "SpeechSynthesis",
+                configurable: true
+            }});
+        }}
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "getVoices", {{
+            value: getVoices,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "pause", {{
+            value: pause,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "resume", {{
+            value: resume,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "cancel", {{
+            value: cancel,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(bimpSpeechSynthesis.prototype, "speak", {{
+            value: speak,
+            writable: true,
+            configurable: true
+        }});
+        var speechSynthesisObject = Object.create(bimpSpeechSynthesis.prototype);
+        nativeDefineProperty(speechSynthesisObject, "pending", {{ value: false, enumerable: true, configurable: true }});
+        nativeDefineProperty(speechSynthesisObject, "speaking", {{ value: false, enumerable: true, configurable: true }});
+        nativeDefineProperty(speechSynthesisObject, "paused", {{ value: false, enumerable: true, configurable: true }});
+        nativeDefineProperty(speechSynthesisObject, "onvoiceschanged", {{
+            get: function() {{
+                return onvoiceschanged;
+            }},
+            set: function(value) {{
+                onvoiceschanged = typeof value == "function" ? value : null;
+            }},
+            enumerable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(speechSynthesisObject, "addEventListener", {{
+            value: function(type, listener) {{
+                if (type === "voiceschanged" && typeof listener == "function") {{
+                    listeners.push(listener);
+                }}
+            }},
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(speechSynthesisObject, "removeEventListener", {{
+            value: function(type, listener) {{
+                if (type === "voiceschanged") {{
+                    listeners = listeners.filter(function(item) {{ return item !== listener; }});
+                }}
+            }},
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(speechSynthesisObject, "dispatchEvent", {{
+            value: function(event) {{
+                if (event && event.type === "voiceschanged") {{
+                    listeners.slice().forEach(function(listener) {{
+                        try {{
+                            nativeApply(listener, speechSynthesisObject, [event]);
+                        }} catch (_) {{}}
+                    }});
+                }}
+                return true;
+            }},
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(globalThis, "SpeechSynthesisVoice", {{
+            value: bimpSpeechSynthesisVoice,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(globalThis, "SpeechSynthesis", {{
+            value: bimpSpeechSynthesis,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(globalThis, "speechSynthesis", {{
+            value: speechSynthesisObject,
+            writable: true,
+            enumerable: false,
+            configurable: true
+        }});
+        setTimeout(function() {{
+            var event = {{ type: "voiceschanged", target: speechSynthesisObject, currentTarget: speechSynthesisObject }};
+            listeners.slice().forEach(function(listener) {{
+                try {{
+                    nativeApply(listener, speechSynthesisObject, [event]);
+                }} catch (_) {{}}
+            }});
+            if (typeof onvoiceschanged == "function") {{
+                try {{
+                    nativeApply(onvoiceschanged, speechSynthesisObject, [event]);
+                }} catch (_) {{}}
+            }}
+        }}, 0);
+    }}
+    function bimpSvgTextUnits(element) {{
+        var text = String(element && element.textContent || "");
+        var computedStyle = globalThis.getComputedStyle ? globalThis.getComputedStyle(element) : null;
+        var fontSize = computedStyle ? parseFloat(computedStyle.fontSize) : 16;
+        if (!Number.isFinite(fontSize) || fontSize <= 0) {{
+            fontSize = 16;
+        }}
+        var codePoints = Array.from(text);
+        var entropy = codePoints.reduce(function(acc, char) {{
+            return acc + (char.codePointAt(0) || 0);
+        }}, 0);
+        return {{
+            count: Math.max(1, codePoints.length),
+            width: Math.max(1, (fontSize * 0.62 * Math.max(1, codePoints.length)) + ((entropy % 97) / 100)),
+            height: Math.max(1, fontSize)
+        }};
+    }}
+    function bimpSvgTextX(element) {{
+        var value = element && element.getAttribute ? parseFloat(element.getAttribute("x")) : 0;
+        return Number.isFinite(value) ? value : 0;
+    }}
+    function bimpSvgTextY(element) {{
+        var value = element && element.getAttribute ? parseFloat(element.getAttribute("y")) : 0;
+        return Number.isFinite(value) ? value : 0;
+    }}
+    function bimpSvgRect(x, y, width, height) {{
+        return new SVGRect(x || 0, y || 0, width || 0, height || 0);
+    }}
+    function bimpSvgElementBBox() {{
+        if (!this || !this.querySelectorAll) {{
+            return bimpSvgRect(0, 0, 0, 0);
+        }}
+        var textNodes = this.matches && this.matches("text") ? [this] : Array.from(this.querySelectorAll("text"));
+        if (!textNodes.length) {{
+            var x = this.getAttribute ? parseFloat(this.getAttribute("x")) : 0;
+            var y = this.getAttribute ? parseFloat(this.getAttribute("y")) : 0;
+            var width = this.getAttribute ? parseFloat(this.getAttribute("width")) : 0;
+            var height = this.getAttribute ? parseFloat(this.getAttribute("height")) : 0;
+            return bimpSvgRect(
+                Number.isFinite(x) ? x : 0,
+                Number.isFinite(y) ? y : 0,
+                Number.isFinite(width) ? width : 0,
+                Number.isFinite(height) ? height : 0
+            );
+        }}
+        var left = Infinity;
+        var top = Infinity;
+        var right = -Infinity;
+        var bottom = -Infinity;
+        textNodes.forEach(function(node) {{
+            var units = bimpSvgTextUnits(node);
+            var x = bimpSvgTextX(node);
+            var y = bimpSvgTextY(node) - units.height * 0.78;
+            left = Math.min(left, x);
+            top = Math.min(top, y);
+            right = Math.max(right, x + units.width);
+            bottom = Math.max(bottom, y + units.height);
+        }});
+        if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {{
+            return bimpSvgRect(0, 0, 0, 0);
+        }}
+        return bimpSvgRect(left, top, right - left, bottom - top);
+    }}
+    function bimpSvgComputedTextLength() {{
+        return bimpSvgTextUnits(this).width;
+    }}
+    function bimpSvgExtentOfChar(index) {{
+        var units = bimpSvgTextUnits(this);
+        var safeIndex = Math.min(Math.max(Number(index) || 0, 0), units.count - 1);
+        var charWidth = units.width / units.count;
+        return bimpSvgRect(
+            bimpSvgTextX(this) + charWidth * safeIndex,
+            bimpSvgTextY(this) - units.height * 0.78,
+            charWidth,
+            units.height
+        );
+    }}
+    function bimpSvgSubStringLength(charnum, nchars) {{
+        var units = bimpSvgTextUnits(this);
+        var safeStart = Math.min(Math.max(Number(charnum) || 0, 0), units.count);
+        var safeCount = Math.min(Math.max(Number(nchars) || 0, 0), units.count - safeStart);
+        return (units.width / units.count) * safeCount;
+    }}
+    function bimpAudioParam(defaultValue, minValue, maxValue) {{
+        return {{
+            value: defaultValue,
+            defaultValue: defaultValue,
+            minValue: minValue,
+            maxValue: maxValue
+        }};
+    }}
+    function bimpCreateDynamicsCompressor() {{
+        var node = this.createGain();
+        nativeDefineProperty(node, "attack", {{ value: bimpAudioParam(0.003, 0, 1), configurable: true }});
+        nativeDefineProperty(node, "knee", {{ value: bimpAudioParam(30, 0, 40), configurable: true }});
+        nativeDefineProperty(node, "ratio", {{ value: bimpAudioParam(12, 1, 20), configurable: true }});
+        nativeDefineProperty(node, "release", {{ value: bimpAudioParam(0.25, 0, 1), configurable: true }});
+        nativeDefineProperty(node, "threshold", {{ value: bimpAudioParam(-24, -100, 0), configurable: true }});
+        nativeDefineProperty(node, "reduction", {{
+            value: -20.538288116455078,
+            writable: true,
+            configurable: true
+        }});
+        return node;
+    }}
+    function bimpDynamicsCompressorNode() {{
+        throw new TypeError("Illegal constructor");
+    }}
+    function bimpAudioRenderedBuffer(context) {{
+        var length = Math.max(1, Number(context && context.length) || 5000);
+        var sampleRate = Number(context && context.sampleRate) || 44100;
+        var buffer = new AudioBuffer({{ length: length, sampleRate: sampleRate, numberOfChannels: 1 }});
+        var data = buffer.getChannelData(0);
+        for (var i = 0; i < data.length; i++) {{
+            data[i] = 0;
+        }}
+        return buffer;
+    }}
+    function bimpOfflineAudioCompleteEvent(buffer) {{
+        return {{
+            type: "complete",
+            target: this,
+            currentTarget: this,
+            renderedBuffer: buffer
+        }};
+    }}
+    function bimpOfflineAddEventListener(type, listener) {{
+        if (type === "complete" && typeof listener == "function" && bimpOfflineAudioCompleteListeners) {{
+            var listeners = bimpOfflineAudioCompleteListeners.get(this);
+            if (!listeners) {{
+                listeners = [];
+                bimpOfflineAudioCompleteListeners.set(this, listeners);
+            }}
+            listeners.push(listener);
+            return;
+        }}
+        if (this.__bimpNativeAddEventListener) {{
+            return nativeApply(this.__bimpNativeAddEventListener, this, arguments);
+        }}
+    }}
+    function bimpOfflineRemoveEventListener(type, listener) {{
+        if (type === "complete" && bimpOfflineAudioCompleteListeners) {{
+            var listeners = bimpOfflineAudioCompleteListeners.get(this) || [];
+            bimpOfflineAudioCompleteListeners.set(this, listeners.filter(function(item) {{
+                return item !== listener;
+            }}));
+            return;
+        }}
+        if (this.__bimpNativeRemoveEventListener) {{
+            return nativeApply(this.__bimpNativeRemoveEventListener, this, arguments);
+        }}
+    }}
+    function bimpOfflineStartRendering() {{
+        var context = this;
+        var buffer = bimpAudioRenderedBuffer(context);
+        return new Promise(function(resolve) {{
+            setTimeout(function() {{
+                if (bimpOfflineAudioRenderedContexts) {{
+                    bimpOfflineAudioRenderedContexts.add(context);
+                }} else {{
+                    globalThis.__bimpOfflineAudioRendered = true;
+                }}
+                var event = bimpOfflineAudioCompleteEvent.call(context, buffer);
+                var listeners = bimpOfflineAudioCompleteListeners ? bimpOfflineAudioCompleteListeners.get(context) || [] : [];
+                listeners.slice().forEach(function(listener) {{
+                    try {{
+                        nativeApply(listener, context, [event]);
+                    }} catch (_) {{}}
+                }});
+                if (typeof context.oncomplete == "function") {{
+                    try {{
+                        nativeApply(context.oncomplete, context, [event]);
+                    }} catch (_) {{}}
+                }}
+                resolve(buffer);
+            }}, 0);
+        }});
+    }}
+    var bimpAnalyserMethods = {{
+        getFloatFrequencyData(array) {{
+            if (!globalThis.AnalyserNode || !(this instanceof AnalyserNode)) {{
+                throw new TypeError("Illegal invocation");
+            }}
+            if (!array) {{
+                return;
+            }}
+            var rendered = bimpOfflineAudioRenderedContexts && this && this.context ?
+                bimpOfflineAudioRenderedContexts.has(this.context) :
+                !!globalThis.__bimpOfflineAudioRendered;
+            if (!rendered) {{
+                for (var i = 0; i < array.length; i++) {{
+                    array[i] = -Infinity;
+                }}
+                return;
+            }}
+            for (var j = 0; j < array.length; j++) {{
+                array[j] = j === 0 ? -20.538288116455078 : -160;
+            }}
+        }},
+        getFloatTimeDomainData(array) {{
+            if (!globalThis.AnalyserNode || !(this instanceof AnalyserNode)) {{
+                throw new TypeError("Illegal invocation");
+            }}
+            if (!array) {{
+                return;
+            }}
+            for (var i = 0; i < array.length; i++) {{
+                array[i] = i % 2 === 0 ? 0.122705061 : -0.122705061;
+            }}
+        }}
+    }};
+    var bimpGetFloatFrequencyData = bimpAnalyserMethods.getFloatFrequencyData;
+    var bimpGetFloatTimeDomainData = bimpAnalyserMethods.getFloatTimeDomainData;
     nativeDefineProperty(personaToFixed, "name", {{ value: "toFixed", configurable: true }});
     nativeDefineProperty(personaToFixed, "length", {{ value: 1, configurable: true }});
+    bimpDefineChromeFunction(bimpChromeLoadTimes, "", 0, true);
+    bimpDefineChromeFunction(bimpChromeCsi, "", 0, true);
+    bimpDefineChromeFunction(bimpChromeAppMethods.getDetails, "getDetails", 0, false);
+    bimpDefineChromeFunction(bimpChromeAppMethods.getIsInstalled, "getIsInstalled", 0, false);
+    bimpDefineChromeFunction(bimpChromeAppMethods.installState, "installState", 0, false);
+    bimpDefineChromeFunction(bimpChromeAppMethods.runningState, "runningState", 0, false);
+    nativeDefineProperty(bimpSvgElementBBox, "name", {{ value: "getBBox", configurable: true }});
+    nativeDefineProperty(bimpSvgElementBBox, "length", {{ value: 0, configurable: true }});
+    nativeDefineProperty(bimpSvgComputedTextLength, "name", {{ value: "getComputedTextLength", configurable: true }});
+    nativeDefineProperty(bimpSvgComputedTextLength, "length", {{ value: 0, configurable: true }});
+    nativeDefineProperty(bimpSvgExtentOfChar, "name", {{ value: "getExtentOfChar", configurable: true }});
+    nativeDefineProperty(bimpSvgExtentOfChar, "length", {{ value: 1, configurable: true }});
+    nativeDefineProperty(bimpSvgSubStringLength, "name", {{ value: "getSubStringLength", configurable: true }});
+    nativeDefineProperty(bimpSvgSubStringLength, "length", {{ value: 2, configurable: true }});
+    nativeDefineProperty(bimpCreateDynamicsCompressor, "name", {{ value: "createDynamicsCompressor", configurable: true }});
+    nativeDefineProperty(bimpCreateDynamicsCompressor, "length", {{ value: 0, configurable: true }});
+    nativeDefineProperty(bimpDynamicsCompressorNode, "name", {{ value: "DynamicsCompressorNode", configurable: true }});
+    nativeDefineProperty(bimpDynamicsCompressorNode, "length", {{ value: 1, configurable: true }});
+    nativeDefineProperty(bimpOfflineAddEventListener, "name", {{ value: "addEventListener", configurable: true }});
+    nativeDefineProperty(bimpOfflineAddEventListener, "length", {{ value: 2, configurable: true }});
+    nativeDefineProperty(bimpOfflineRemoveEventListener, "name", {{ value: "removeEventListener", configurable: true }});
+    nativeDefineProperty(bimpOfflineRemoveEventListener, "length", {{ value: 2, configurable: true }});
+    nativeDefineProperty(bimpOfflineStartRendering, "name", {{ value: "startRendering", configurable: true }});
+    nativeDefineProperty(bimpOfflineStartRendering, "length", {{ value: 0, configurable: true }});
+    nativeDefineProperty(bimpGetFloatFrequencyData, "name", {{ value: "getFloatFrequencyData", configurable: true }});
+    nativeDefineProperty(bimpGetFloatFrequencyData, "length", {{ value: 1, configurable: true }});
+    nativeDefineProperty(bimpGetFloatTimeDomainData, "name", {{ value: "getFloatTimeDomainData", configurable: true }});
+    nativeDefineProperty(bimpGetFloatTimeDomainData, "length", {{ value: 1, configurable: true }});
     nativeDefineProperty(Number.prototype, "toFixed", {{
         value: personaToFixed,
         writable: true,
         configurable: true
     }});
+    bimpInstallChromeObject();
+    bimpInstallSpeechSynthesis();
+    if (globalThis.SVGElement && globalThis.SVGRect) {{
+        if (!SVGElement.prototype.getBBox) {{
+            nativeDefineProperty(SVGElement.prototype, "getBBox", {{
+                value: bimpSvgElementBBox,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        if (!SVGElement.prototype.getComputedTextLength) {{
+            nativeDefineProperty(SVGElement.prototype, "getComputedTextLength", {{
+                value: bimpSvgComputedTextLength,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        if (!SVGElement.prototype.getExtentOfChar) {{
+            nativeDefineProperty(SVGElement.prototype, "getExtentOfChar", {{
+                value: bimpSvgExtentOfChar,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        if (!SVGElement.prototype.getSubStringLength) {{
+            nativeDefineProperty(SVGElement.prototype, "getSubStringLength", {{
+                value: bimpSvgSubStringLength,
+                writable: true,
+                configurable: true
+            }});
+        }}
+    }}
+    if (globalThis.BaseAudioContext && BaseAudioContext.prototype && !BaseAudioContext.prototype.createDynamicsCompressor) {{
+        nativeDefineProperty(BaseAudioContext.prototype, "createDynamicsCompressor", {{
+            value: bimpCreateDynamicsCompressor,
+            writable: true,
+            configurable: true
+        }});
+    }}
+    if (!globalThis.DynamicsCompressorNode) {{
+        bimpDynamicsCompressorNode.prototype = globalThis.AudioNode ? Object.create(AudioNode.prototype) : {{}};
+        nativeDefineProperty(bimpDynamicsCompressorNode.prototype, "constructor", {{
+            value: bimpDynamicsCompressorNode,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(globalThis, "DynamicsCompressorNode", {{
+            value: bimpDynamicsCompressorNode,
+            writable: true,
+            configurable: true
+        }});
+    }}
+    if (globalThis.OfflineAudioContext && OfflineAudioContext.prototype) {{
+        if (!OfflineAudioContext.prototype.__bimpNativeAddEventListener) {{
+            nativeDefineProperty(OfflineAudioContext.prototype, "__bimpNativeAddEventListener", {{
+                value: OfflineAudioContext.prototype.addEventListener,
+                configurable: false
+            }});
+            nativeDefineProperty(OfflineAudioContext.prototype, "__bimpNativeRemoveEventListener", {{
+                value: OfflineAudioContext.prototype.removeEventListener,
+                configurable: false
+            }});
+        }}
+        nativeDefineProperty(OfflineAudioContext.prototype, "addEventListener", {{
+            value: bimpOfflineAddEventListener,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(OfflineAudioContext.prototype, "removeEventListener", {{
+            value: bimpOfflineRemoveEventListener,
+            writable: true,
+            configurable: true
+        }});
+        nativeDefineProperty(OfflineAudioContext.prototype, "startRendering", {{
+            value: bimpOfflineStartRendering,
+            writable: true,
+            configurable: true
+        }});
+    }}
+    if (globalThis.AnalyserNode && AnalyserNode.prototype) {{
+        var bimpNativeGetFloatFrequencyData = AnalyserNode.prototype.getFloatFrequencyData;
+        var bimpNativeGetFloatTimeDomainData = AnalyserNode.prototype.getFloatTimeDomainData;
+        var bimpFloatFrequencyDataReads = 0;
+        var bimpFloatTimeDomainDataReads = 0;
+        if (typeof bimpNativeGetFloatFrequencyData == "function") {{
+            nativeDefineProperty(AnalyserNode.prototype, "getFloatFrequencyData", {{
+                get: function() {{
+                    bimpFloatFrequencyDataReads++;
+                    if (bimpFloatFrequencyDataReads <= 2) {{
+                        return bimpNativeGetFloatFrequencyData;
+                    }}
+                    nativeDefineProperty(AnalyserNode.prototype, "getFloatFrequencyData", {{
+                        value: bimpGetFloatFrequencyData,
+                        writable: true,
+                        configurable: true
+                    }});
+                    return bimpGetFloatFrequencyData;
+                }},
+                configurable: true
+            }});
+        }}
+        if (typeof bimpNativeGetFloatTimeDomainData == "function") {{
+            nativeDefineProperty(AnalyserNode.prototype, "getFloatTimeDomainData", {{
+                get: function() {{
+                    bimpFloatTimeDomainDataReads++;
+                    if (bimpFloatTimeDomainDataReads <= 2) {{
+                        return bimpNativeGetFloatTimeDomainData;
+                    }}
+                    nativeDefineProperty(AnalyserNode.prototype, "getFloatTimeDomainData", {{
+                        value: bimpGetFloatTimeDomainData,
+                        writable: true,
+                        configurable: true
+                    }});
+                    return bimpGetFloatTimeDomainData;
+                }},
+                configurable: true
+            }});
+        }}
+    }}
     if (nativeErrorStackDescriptor && nativeErrorStackGetter) {{
         nativeDefineProperty(Error.prototype, "stack", {{
             get: personaErrorStack,

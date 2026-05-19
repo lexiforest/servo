@@ -387,6 +387,8 @@ pub struct Preferences {
     pub bimp_js_ua_model: String,
     /// Bimp persona override for Bluetooth availability.
     pub bimp_js_bluetooth_available: bool,
+    /// Bimp persona override for `speechSynthesis.getVoices()`.
+    pub bimp_js_speech_voices: String,
     /// Bimp persona override for media input devices exposed by `enumerateDevices()`.
     pub bimp_js_media_audio_inputs: i64,
     /// Bimp persona override for video input devices exposed by `enumerateDevices()`.
@@ -635,6 +637,7 @@ impl Preferences {
             bimp_js_ua_bitness: String::new(),
             bimp_js_ua_model: String::new(),
             bimp_js_bluetooth_available: false,
+            bimp_js_speech_voices: String::new(),
             bimp_js_media_audio_inputs: 0,
             bimp_js_media_video_inputs: 0,
             bimp_js_media_audio_outputs: 0,
