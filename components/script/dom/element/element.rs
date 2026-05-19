@@ -112,6 +112,9 @@ use crate::dom::customelementregistry::{
 use crate::dom::document::Document;
 use crate::dom::documentfragment::DocumentFragment;
 use crate::dom::domrect::DOMRect;
+use crate::dom::domrectfingerprint::{
+    apply_domrect_persona, fill_empty_element_client_rects,
+};
 use crate::dom::domrectlist::DOMRectList;
 use crate::dom::domtokenlist::DOMTokenList;
 use crate::dom::element::attributes::storage::{
@@ -3197,20 +3200,30 @@ impl ElementMethods<crate::DomTypeHolder> for Element {
     /// <https://drafts.csswg.org/cssom-view/#dom-element-getclientrects>
     fn GetClientRects(&self, cx: &mut JSContext) -> DomRoot<DOMRectList> {
         let win = self.owner_window();
-        let raw_rects = self.upcast::<Node>().border_boxes();
-        let rects: Vec<DomRoot<DOMRect>> = raw_rects
+        let node = self.upcast::<Node>();
+        let mut rects: Vec<DomRoot<DOMRect>> = node
+            .border_boxes()
             .into_iter()
             .map(|rect| {
-                DOMRect::new(
-                    cx,
-                    win.upcast(),
+                let (x, y, width, height) = apply_domrect_persona(
                     rect.origin.x.to_f64_px(),
                     rect.origin.y.to_f64_px(),
                     rect.size.width.to_f64_px(),
                     rect.size.height.to_f64_px(),
-                )
+                );
+                DOMRect::new(cx, win.upcast(), x, y, width, height)
             })
             .collect();
+        if rects.is_empty() && (node.border_box().is_some() || fill_empty_element_client_rects()) {
+            let rect = node.border_box().unwrap_or_default();
+            let (x, y, width, height) = apply_domrect_persona(
+                rect.origin.x.to_f64_px(),
+                rect.origin.y.to_f64_px(),
+                rect.size.width.to_f64_px(),
+                rect.size.height.to_f64_px(),
+            );
+            rects.push(DOMRect::new(cx, win.upcast(), x, y, width, height));
+        }
         DOMRectList::new(cx, &win, rects)
     }
 
@@ -3219,14 +3232,13 @@ impl ElementMethods<crate::DomTypeHolder> for Element {
         let win = self.owner_window();
         let rect = self.upcast::<Node>().border_box().unwrap_or_default();
         debug_assert!(rect.size.width.to_f64_px() >= 0.0 && rect.size.height.to_f64_px() >= 0.0);
-        DOMRect::new(
-            cx,
-            win.upcast(),
+        let (x, y, width, height) = apply_domrect_persona(
             rect.origin.x.to_f64_px(),
             rect.origin.y.to_f64_px(),
             rect.size.width.to_f64_px(),
             rect.size.height.to_f64_px(),
-        )
+        );
+        DOMRect::new(cx, win.upcast(), x, y, width, height)
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-element-scroll>

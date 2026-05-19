@@ -36,6 +36,9 @@ use crate::dom::characterdata::CharacterData;
 use crate::dom::document::Document;
 use crate::dom::documentfragment::DocumentFragment;
 use crate::dom::domrect::DOMRect;
+use crate::dom::domrectfingerprint::{
+    apply_domrect_persona, fill_empty_element_client_rects,
+};
 use crate::dom::domrectlist::DOMRectList;
 use crate::dom::element::Element;
 use crate::dom::html::htmlscriptelement::HTMLScriptElement;
@@ -343,7 +346,30 @@ impl Range {
         self.abstract_range().Collapsed()
     }
 
-    fn client_rects(&self) -> impl Iterator<Item = Rect<Au, CSSPixel>> {
+    fn selected_single_child(&self) -> Option<DomRoot<Node>> {
+        let start = self.start_container();
+        let end = self.end_container();
+        let start_offset = self.start_offset();
+        if start != end || self.end_offset() != start_offset + 1 {
+            return None;
+        }
+
+        start.children().nth(start_offset as usize)
+    }
+
+    fn client_rects_for_node(node: &Node) -> Vec<Rect<Au, CSSPixel>> {
+        let mut rects: Vec<Rect<Au, CSSPixel>> = node.border_boxes().collect();
+        if rects.is_empty() && (node.border_box().is_some() || fill_empty_element_client_rects()) {
+            rects.push(node.border_box().unwrap_or_default());
+        }
+        rects
+    }
+
+    fn client_rects(&self) -> Vec<Rect<Au, CSSPixel>> {
+        if let Some(node) = self.selected_single_child() {
+            return Self::client_rects_for_node(&node);
+        }
+
         // FIXME: For text nodes that are only partially selected, this should return the client
         // rect of the selected part, not the whole text node.
         let start = self.start_container();
@@ -355,6 +381,7 @@ impl Range {
             .take_while(move |node| node != &end)
             .chain(iter::once(end_clone))
             .flat_map(move |node| node.border_boxes())
+            .collect()
     }
 
     /// <https://dom.spec.whatwg.org/#concept-range-bp-set>
@@ -1230,15 +1257,15 @@ impl RangeMethods<crate::DomTypeHolder> for Range {
 
         let client_rects = self
             .client_rects()
+            .into_iter()
             .map(|rect| {
-                DOMRect::new(
-                    cx,
-                    window.upcast(),
+                let (x, y, width, height) = apply_domrect_persona(
                     rect.origin.x.to_f64_px(),
                     rect.origin.y.to_f64_px(),
                     rect.size.width.to_f64_px(),
                     rect.size.height.to_f64_px(),
-                )
+                );
+                DOMRect::new(cx, window.upcast(), x, y, width, height)
             })
             .collect();
 
@@ -1257,15 +1284,14 @@ impl RangeMethods<crate::DomTypeHolder> for Range {
         // Step 4. Otherwise, return a DOMRect object describing the smallest rectangle that includes all
         // of the rectangles in list of which the height or width is not zero.
         let bounding_rect = list.fold(euclid::Rect::zero(), |acc, rect| acc.union(&rect));
-
-        DOMRect::new(
-            cx,
-            window.upcast(),
+        let (x, y, width, height) = apply_domrect_persona(
             bounding_rect.origin.x.to_f64_px(),
             bounding_rect.origin.y.to_f64_px(),
             bounding_rect.size.width.to_f64_px(),
             bounding_rect.size.height.to_f64_px(),
-        )
+        );
+
+        DOMRect::new(cx, window.upcast(), x, y, width, height)
     }
 }
 
