@@ -263,13 +263,16 @@ impl Layout for LayoutThread {
     fn set_viewport_details(&mut self, viewport_details: ViewportDetails) -> bool {
         let device = self.stylist.device_mut();
         let device_pixel_ratio = Scale::new(viewport_details.hidpi_scale_factor.get());
+        let screen_size = persona_screen_size_for_media_queries(viewport_details.size);
         if device.viewport_size() == viewport_details.size &&
+            device.screen_size() == screen_size &&
             device.device_pixel_ratio() == device_pixel_ratio
         {
             return false;
         }
 
         device.set_viewport_size(viewport_details.size);
+        device.set_screen_size(screen_size);
         device.set_device_pixel_ratio(device_pixel_ratio);
         self.device_has_changed = true;
         true
@@ -763,6 +766,7 @@ impl LayoutThread {
             MediaType::screen(),
             QuirksMode::NoQuirks,
             config.viewport_details.size,
+            persona_screen_size_for_media_queries(config.viewport_details.size),
             Scale::new(config.viewport_details.hidpi_scale_factor.get()),
             Box::new(LayoutFontMetricsProvider(config.font_context.clone())),
             ComputedValues::initial_values_with_font_override(font),
@@ -1515,6 +1519,25 @@ impl LayoutThread {
             ..Default::default()
         })
     }
+}
+
+fn persona_screen_size_for_media_queries(
+    fallback_size: Size2D<f32, CSSPixel>,
+) -> Size2D<f32, CSSPixel> {
+    let width = pref!(bimp_js_screen_width);
+    let height = pref!(bimp_js_screen_height);
+    Size2D::new(
+        if width > 0 {
+            width as f32
+        } else {
+            fallback_size.width
+        },
+        if height > 0 {
+            height as f32
+        } else {
+            fallback_size.height
+        },
+    )
 }
 
 fn get_ua_stylesheets() -> Result<UserAgentStylesheets, &'static str> {

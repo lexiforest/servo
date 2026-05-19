@@ -1084,6 +1084,7 @@ impl HTMLScriptElement {
             };
 
         let document = self.owner_document();
+        document.ensure_bimp_engine_persona_script(cx);
 
         match script {
             Script::Classic(script) => {

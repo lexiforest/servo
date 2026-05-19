@@ -427,6 +427,20 @@ pub struct Preferences {
     pub bimp_js_canvas_noise_amplitude: i64,
     /// Whether to align the tiny Blink Canvas 2D low-entropy probe.
     pub bimp_js_canvas_blink_low_entropy_probe: bool,
+    /// Bimp persona seed used to stabilize DOMRect geometry fingerprints.
+    pub bimp_js_domrect_seed: String,
+    /// Whether DOMRect geometry post-processing is enabled.
+    pub bimp_js_domrect_enabled: bool,
+    /// DOMRect geometry quantization precision in steps per CSS pixel.
+    pub bimp_js_domrect_quantization_steps_per_px: i64,
+    /// Whether empty Element.getClientRects() results should expose a zero rect in persona mode.
+    pub bimp_js_domrect_fill_empty_client_rects: bool,
+    /// Whether document-start JS engine surface impersonation is enabled.
+    pub bimp_js_engine_impersonation_enabled: bool,
+    /// Persona override for V8-style Number.prototype.toFixed range errors.
+    pub bimp_js_engine_to_fixed_range_error_message: String,
+    /// Persona override for Array constructor native source.
+    pub bimp_js_engine_array_constructor_source: String,
     /// Whether Servo's internal WebDriver helper functions are exposed on Window.
     pub bimp_webdriver_helpers_enabled: bool,
     /// Whether or not the viewport meta tag is enabled.
@@ -641,6 +655,13 @@ impl Preferences {
             bimp_js_canvas_noise_enabled: false,
             bimp_js_canvas_noise_amplitude: 0,
             bimp_js_canvas_blink_low_entropy_probe: false,
+            bimp_js_domrect_seed: String::new(),
+            bimp_js_domrect_enabled: false,
+            bimp_js_domrect_quantization_steps_per_px: 0,
+            bimp_js_domrect_fill_empty_client_rects: false,
+            bimp_js_engine_impersonation_enabled: false,
+            bimp_js_engine_to_fixed_range_error_message: String::new(),
+            bimp_js_engine_array_constructor_source: String::new(),
             bimp_webdriver_helpers_enabled: false,
             viewport_meta_enabled: false,
             log_filter: String::new(),

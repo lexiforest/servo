@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
+use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
 use std::cmp::Ordering;
 use std::collections::hash_map::Entry::{Occupied, Vacant};
@@ -140,6 +141,7 @@ use crate::dom::eventtarget::EventTarget;
 use crate::dom::execcommand::basecommand::{CommandName, DefaultSingleLineContainerName};
 use crate::dom::execcommand::execcommands::DocumentExecCommandSupport;
 use crate::dom::focusevent::FocusEvent;
+use crate::dom::global_scope_script_execution::{ErrorReporting, RethrowErrors};
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::hashchangeevent::HashChangeEvent;
 use crate::dom::html::htmlanchorelement::HTMLAnchorElement;
@@ -197,6 +199,7 @@ use crate::mime::{APPLICATION, CHARSET};
 use crate::navigation::navigate;
 use crate::network_listener::{FetchResponseListener, NetworkListener};
 use crate::realms::enter_realm;
+use crate::script_module::ScriptFetchOptions;
 use crate::script_runtime::CanGc;
 use crate::script_thread::ScriptThread;
 use crate::stylesheet_set::StylesheetSetRef;
@@ -372,6 +375,8 @@ pub(crate) struct Document {
     domcontentloaded_dispatched: Cell<bool>,
     /// The script element that is currently executing.
     current_script: MutNullableDom<HTMLScriptElement>,
+    /// Whether the persona document-start script has run before author script.
+    bimp_engine_persona_script_injected: Cell<bool>,
     /// <https://html.spec.whatwg.org/multipage/#pending-parsing-blocking-script>
     pending_parsing_blocking_script: DomRefCell<Option<PendingScript>>,
     /// Number of stylesheets that block executing the next parser-inserted script
@@ -3558,6 +3563,7 @@ impl Document {
             domcontentloaded_dispatched: Cell::new(domcontentloaded_dispatched),
 
             current_script: Default::default(),
+            bimp_engine_persona_script_injected: Cell::new(false),
             pending_parsing_blocking_script: Default::default(),
             script_blocking_stylesheets_count: Default::default(),
             render_blocking_element_count: Default::default(),
@@ -3648,6 +3654,99 @@ impl Document {
             default_single_line_container_name: Default::default(),
             css_styling_flag: Default::default(),
         }
+    }
+
+    pub(crate) fn ensure_bimp_engine_persona_script(&self, cx: &mut js::context::JSContext) {
+        if !pref!(bimp_js_engine_impersonation_enabled) ||
+            self.bimp_engine_persona_script_injected.replace(true)
+        {
+            return;
+        }
+
+        let message = pref!(bimp_js_engine_to_fixed_range_error_message);
+        if message.is_empty() {
+            return;
+        }
+
+        let Ok(message_literal) = serde_json::to_string(&message) else {
+            return;
+        };
+
+        let source = format!(
+            r#"(function() {{
+    if (globalThis.__bimpEnginePersonaApplied) {{
+        return;
+    }}
+    var message = {message_literal};
+    var nativeApply = Reflect.apply;
+    var nativeDefineProperty = Object.defineProperty;
+    var nativeGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+    var nativeNumberToFixed = Number.prototype.toFixed;
+    var nativeErrorStackDescriptor = nativeGetOwnPropertyDescriptor(Error.prototype, "stack");
+    var nativeErrorStackGetter = nativeErrorStackDescriptor && nativeErrorStackDescriptor.get;
+    function personaToFixed(fractionDigits) {{
+        try {{
+            return nativeApply(nativeNumberToFixed, this, arguments);
+        }} catch (err) {{
+            var digits = arguments.length === 0 ? 0 : Number(fractionDigits);
+            if (err instanceof RangeError && (digits < 0 || digits > 100 || !Number.isFinite(digits))) {{
+                throw new RangeError(message);
+            }}
+            throw err;
+        }}
+    }}
+    function personaErrorStack() {{
+        var rawStack = nativeErrorStackGetter ? nativeApply(nativeErrorStackGetter, this, []) : "";
+        var name = String(this && this.name || "Error");
+        var message = String(this && this.message || "");
+        if (name === "TypeError" && message.indexOf("Function.prototype.toString called on incompatible object") !== -1) {{
+            return name + ": " + message + "\n" +
+                "    at Function.toString (<anonymous>) at Object.toString (<anonymous>)\n" +
+                rawStack;
+        }}
+        if (name === "TypeError" &&
+            message.indexOf("prototype") !== -1 &&
+            message.indexOf("is not an object") !== -1) {{
+            return name + ": " + message + "\n" +
+                "    at Function.[Symbol.hasInstance] (<anonymous>) at Proxy.[Symbol.hasInstance] (<anonymous>)\n" +
+                rawStack;
+        }}
+        return rawStack;
+    }}
+    nativeDefineProperty(personaToFixed, "name", {{ value: "toFixed", configurable: true }});
+    nativeDefineProperty(personaToFixed, "length", {{ value: 1, configurable: true }});
+    nativeDefineProperty(Number.prototype, "toFixed", {{
+        value: personaToFixed,
+        writable: true,
+        configurable: true
+    }});
+    if (nativeErrorStackDescriptor && nativeErrorStackGetter) {{
+        nativeDefineProperty(Error.prototype, "stack", {{
+            get: personaErrorStack,
+            set: nativeErrorStackDescriptor.set,
+            enumerable: nativeErrorStackDescriptor.enumerable,
+            configurable: nativeErrorStackDescriptor.configurable
+        }});
+    }}
+    nativeDefineProperty(globalThis, "__bimpEnginePersonaApplied", {{
+        value: true,
+        configurable: false
+    }});
+}})();"#
+        );
+
+        let global = self.window.upcast::<GlobalScope>();
+        let script = global.create_a_classic_script(
+            cx,
+            Cow::Owned(source),
+            self.url.borrow().clone(),
+            ScriptFetchOptions::default_classic_script(),
+            ErrorReporting::Unmuted,
+            None,
+            1,
+            false,
+        );
+        let _ = global.run_a_classic_script(cx, script, RethrowErrors::No);
     }
 
     /// Returns a policy value that should be used for fetches initiated by this document.

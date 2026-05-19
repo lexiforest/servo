@@ -262,6 +262,7 @@ pub(crate) mod dompoint;
 pub(crate) mod dompointreadonly;
 pub(crate) mod domquad;
 pub(crate) mod domrect;
+pub(crate) mod domrectfingerprint;
 pub(crate) mod domrectlist;
 pub(crate) mod domrectreadonly;
 pub(crate) mod domstringlist;
