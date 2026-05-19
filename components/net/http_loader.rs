@@ -81,6 +81,7 @@ use crate::connector::{
 };
 use crate::cookie::ServoCookie;
 use crate::cookie_storage::CookieStorage;
+use crate::curl_impersonate_loader;
 use crate::decoder::Decoder;
 use crate::devtools::{
     prepare_devtools_request, send_request_to_devtools, send_response_values_to_devtools,
@@ -525,6 +526,68 @@ async fn obtain_response(
     // https://url.spec.whatwg.org/#percent-encoded-bytes
     let encoded_url = utf8_percent_encode(url.as_str(), FRAGMENT).to_string();
 
+    if curl_impersonate_loader::supports_url(url) {
+        let request_body =
+            collect_buffered_request_body(body_sender, fetch_terminated, devtools_bytes.clone())
+                .await?;
+
+        let connect_start = CrossProcessInstant::now();
+        context.timing.set_attributes(&[
+            ResourceAttribute::DomainLookupStart,
+            ResourceAttribute::ConnectStart(connect_start),
+        ]);
+        if url.scheme() == "https" {
+            context
+                .timing
+                .set_attribute(ResourceAttribute::SecureConnectionStart);
+        }
+
+        let send_start = CrossProcessInstant::now();
+        let curl_response = curl_impersonate_loader::send(
+            url.clone(),
+            method.clone(),
+            headers.clone(),
+            request_body,
+            context.user_agent.clone(),
+        )
+        .await?;
+        let send_end = CrossProcessInstant::now();
+        let connect_end = send_end;
+        context
+            .timing
+            .set_attribute(ResourceAttribute::ConnectEnd(connect_end));
+
+        let msg = request_id.and_then(|request_id| {
+            let pipeline_id = (*pipeline_id)?;
+            let browsing_context_id = browsing_context_id?;
+            Some(prepare_devtools_request(
+                request_id.to_owned(),
+                url.clone(),
+                method.clone(),
+                headers.clone(),
+                Some(devtools_bytes.lock().clone()),
+                pipeline_id,
+                (connect_end - connect_start).unsigned_abs(),
+                (send_end - send_start).unsigned_abs(),
+                destination,
+                is_xhr,
+                browsing_context_id,
+            ))
+        });
+
+        let mut response = HyperResponse::builder()
+            .status(curl_response.status)
+            .body(
+                Full::new(Bytes::from(curl_response.body))
+                    .map_err(|_| unreachable!())
+                    .boxed(),
+            )
+            .map_err(|error| NetworkError::HttpError(error.to_string()))?;
+        *response.headers_mut() = curl_response.headers;
+
+        return Ok((Decoder::detect(response, url.is_secure_scheme()), msg));
+    }
+
     let request = if let Some(chunk_requester) = body_sender {
         let (sink, stream) = if source_is_null {
             // Step 4.2 of https://fetch.spec.whatwg.org/#concept-http-network-fetch
@@ -687,6 +750,34 @@ async fn obtain_response(
     {
         client_future.await
     }
+}
+
+async fn collect_buffered_request_body(
+    body_sender: Option<StdArc<Mutex<Option<IpcSender<BodyChunkRequest>>>>>,
+    fetch_terminated: UnboundedSender<bool>,
+    devtools_bytes: StdArc<Mutex<Vec<u8>>>,
+) -> Result<Option<Vec<u8>>, NetworkError> {
+    let Some(chunk_requester) = body_sender else {
+        return Ok(None);
+    };
+
+    let (sender, mut receiver) = unbounded_channel();
+    obtain_response_setup_router_callback(
+        devtools_bytes,
+        chunk_requester,
+        BodySink::Buffered(sender),
+        fetch_terminated,
+    )?;
+
+    let mut body = vec![];
+    while let Some(chunk) = receiver.recv().await {
+        match chunk {
+            BodyChunk::Chunk(bytes) => body.extend_from_slice(&bytes),
+            BodyChunk::Done => break,
+        }
+    }
+
+    Ok(Some(body))
 }
 
 /// Setup the callback mechanism to forward chunks from the request received to the `chunk_requester`.
@@ -1376,6 +1467,7 @@ async fn http_network_or_cache_fetch(
 
     // Step 8.13 Append the Fetch metadata headers for httpRequest.
     append_the_fetch_metadata_headers(http_request);
+    apply_bimp_navigation_header_shape(http_request);
 
     // Step 8.14: If httpRequest’s initiator is "prefetch", then set a structured field value given
     // (`Sec-Purpose`, the token "prefetch") in httpRequest’s header list.
@@ -1392,6 +1484,7 @@ async fn http_network_or_cache_fetch(
             .headers
             .typed_insert::<UserAgent>(context.user_agent.parse().unwrap());
     }
+    append_bimp_client_hint_headers(http_request);
 
     // Steps 8.16 to 8.18
     append_cache_data_to_headers(http_request);
@@ -2600,6 +2693,51 @@ fn append_the_fetch_metadata_headers(r: &mut Request) {
     set_the_sec_fetch_user_header(r);
 }
 
+fn append_bimp_client_hint_headers(request: &mut Request) {
+    append_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua",
+        &servo_config::pref!(bimp_js_ua_brands),
+    );
+    append_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-mobile",
+        if servo_config::pref!(bimp_js_ua_mobile) {
+            "?1"
+        } else {
+            "?0"
+        },
+    );
+    append_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-platform",
+        &servo_config::pref!(bimp_js_ua_platform),
+    );
+    if request.is_navigation_request() {
+        append_header_if_absent(&mut request.headers, "upgrade-insecure-requests", "1");
+    }
+}
+
+fn apply_bimp_navigation_header_shape(request: &mut Request) {
+    if !request.is_navigation_request() {
+        return;
+    }
+
+    request.headers.remove(header::REFERER);
+    request
+        .headers
+        .typed_insert::<SecFetchSite>(SecFetchSite::None);
+}
+
+fn append_header_if_absent(headers: &mut HeaderMap, name: &'static str, value: &str) {
+    if value.is_empty() || headers.contains_key(name) {
+        return;
+    }
+    if let Ok(value) = HeaderValue::from_str(value) {
+        headers.insert(HeaderName::from_static(name), value);
+    }
+}
+
 /// Steps 8.16 to 8.18 in [HTTP network or cache fetch](https://fetch.spec.whatwg.org/#concept-http-network-or-cache-fetch)
 fn append_cache_data_to_headers(http_request: &mut Request) {
     match http_request.cache_mode {
@@ -2688,8 +2826,9 @@ fn set_the_sec_fetch_site_header(r: &mut Request) {
     // Step 3. Set header’s value to same-origin.
     let mut header = SecFetchSite::SameOrigin;
 
-    // TODO: Step 3. If r is a navigation request that was explicitly caused by a
-    // user’s interaction with the user agent, then set header’s value to none.
+    if r.is_navigation_request() && matches!(r.referrer, Referrer::NoReferrer) {
+        header = SecFetchSite::None;
+    }
 
     // Step 5. If header’s value is not none, then for each url in r’s url list:
     if header != SecFetchSite::None {

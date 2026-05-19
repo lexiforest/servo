@@ -10,6 +10,7 @@ pub mod cookie;
 pub mod cookie_storage;
 mod decoder;
 mod devtools;
+mod curl_impersonate_loader;
 pub mod embedder;
 pub mod filemanager_thread;
 mod hosts;
