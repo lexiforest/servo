@@ -2973,6 +2973,10 @@ impl GlobalScope {
         assert!(self.can_run_script());
 
         run_a_script::<DomTypeHolder, _, _>(cx, self, |cx| {
+            if let Some(window) = self.downcast::<Window>() {
+                window.Document().ensure_bimp_engine_persona_script(cx);
+            }
+
             let url = self.api_base_url();
             let fetch_options = ScriptFetchOptions::default_classic_script();
 

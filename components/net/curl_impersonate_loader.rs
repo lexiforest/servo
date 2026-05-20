@@ -92,14 +92,18 @@ fn run_command(
         },
     }
 
+    let top_level_navigation = is_top_level_navigation(headers);
     for (name, value) in headers {
-        if !should_forward_header_to_curl(name) {
+        if !should_forward_header_to_curl(name, top_level_navigation) {
             continue;
         }
         let Ok(value) = value.to_str() else {
             continue;
         };
         process.arg("-H").arg(format!("{}: {value}", name.as_str()));
+    }
+    if !top_level_navigation {
+        suppress_navigation_only_default_headers(&mut process);
     }
 
     process.arg(url.as_str()).stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -148,29 +152,42 @@ fn normalize_decoded_response_headers(headers: &mut HeaderMap) {
     headers.remove("transfer-encoding");
 }
 
-fn should_forward_header_to_curl(name: &HeaderName) -> bool {
-    !matches!(
-        name.as_str(),
-        "host" |
-            "connection" |
-            "user-agent" |
-            "accept" |
-            "accept-language" |
-            "accept-encoding" |
-            "content-length" |
-            "upgrade-insecure-requests" |
-            "sec-fetch-dest" |
-            "sec-fetch-mode" |
-            "sec-fetch-site" |
-            "sec-fetch-user" |
-            "sec-ch-ua" |
-            "sec-ch-ua-mobile" |
-            "sec-ch-ua-platform" |
-            "sec-ch-ua-arch" |
-            "sec-ch-ua-full-version-list" |
-            "sec-ch-ua-model" |
-            "sec-ch-device-memory"
-    )
+fn is_top_level_navigation(headers: &HeaderMap) -> bool {
+    headers
+        .get("sec-fetch-mode")
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| value.eq_ignore_ascii_case("navigate"))
+}
+
+fn should_forward_header_to_curl(name: &HeaderName, top_level_navigation: bool) -> bool {
+    match name.as_str() {
+        "host" | "connection" | "user-agent" | "accept-encoding" | "content-length" => false,
+        "accept" |
+        "accept-language" |
+        "upgrade-insecure-requests" |
+        "sec-fetch-dest" |
+        "sec-fetch-mode" |
+        "sec-fetch-site" |
+        "sec-fetch-user" |
+        "sec-ch-ua" |
+        "sec-ch-ua-mobile" |
+        "sec-ch-ua-platform" |
+        "sec-ch-ua-arch" |
+        "sec-ch-ua-bitness" |
+        "sec-ch-ua-platform-version" |
+        "sec-ch-ua-full-version-list" |
+        "sec-ch-ua-model" |
+        "sec-ch-device-memory" => !top_level_navigation,
+        _ => true,
+    }
+}
+
+fn suppress_navigation_only_default_headers(process: &mut Command) {
+    process
+        .arg("-H")
+        .arg("Upgrade-Insecure-Requests:")
+        .arg("-H")
+        .arg("Sec-Fetch-User:");
 }
 
 fn parse_curl_output(output: &[u8]) -> Result<CurlImpersonateResponse, NetworkError> {
@@ -299,21 +316,30 @@ mod tests {
 
     #[test]
     fn skips_fingerprint_headers_so_curl_can_use_native_defaults() {
-        assert!(!should_forward_header_to_curl(&HeaderName::from_static(
-            "user-agent"
-        )));
-        assert!(!should_forward_header_to_curl(&HeaderName::from_static(
-            "sec-ch-ua"
-        )));
-        assert!(!should_forward_header_to_curl(&HeaderName::from_static(
-            "accept"
-        )));
-        assert!(should_forward_header_to_curl(&HeaderName::from_static(
-            "cookie"
-        )));
-        assert!(should_forward_header_to_curl(&HeaderName::from_static(
-            "content-type"
-        )));
+        assert!(!should_forward_header_to_curl(
+            &HeaderName::from_static("user-agent"),
+            true
+        ));
+        assert!(!should_forward_header_to_curl(
+            &HeaderName::from_static("sec-ch-ua"),
+            true
+        ));
+        assert!(!should_forward_header_to_curl(
+            &HeaderName::from_static("accept"),
+            true
+        ));
+        assert!(should_forward_header_to_curl(
+            &HeaderName::from_static("sec-fetch-mode"),
+            false
+        ));
+        assert!(should_forward_header_to_curl(
+            &HeaderName::from_static("cookie"),
+            true
+        ));
+        assert!(should_forward_header_to_curl(
+            &HeaderName::from_static("content-type"),
+            true
+        ));
     }
 
     #[test]

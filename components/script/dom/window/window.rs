@@ -2114,7 +2114,8 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-screenx>
     fn ScreenX(&self) -> i32 {
-        self.client_window().min.x
+        let value = servo_config::pref!(bimp_js_window_screen_x);
+        value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
     }
 
     /// <https://drafts.csswg.org/cssom-view/#ref-for-dom-window-screenleft>
@@ -2124,7 +2125,8 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-screeny>
     fn ScreenY(&self) -> i32 {
-        self.client_window().min.y
+        let value = servo_config::pref!(bimp_js_window_screen_y);
+        value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
     }
 
     /// <https://drafts.csswg.org/cssom-view/#ref-for-dom-window-screentop>
@@ -2134,12 +2136,22 @@ impl WindowMethods<crate::DomTypeHolder> for Window {
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-outerheight>
     fn OuterHeight(&self) -> i32 {
-        self.client_window().height()
+        let value = servo_config::pref!(bimp_js_window_outer_height);
+        if value > 0 {
+            value.clamp(1, i32::MAX as i64) as i32
+        } else {
+            self.client_window().height()
+        }
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-outerwidth>
     fn OuterWidth(&self) -> i32 {
-        self.client_window().width()
+        let value = servo_config::pref!(bimp_js_window_outer_width);
+        if value > 0 {
+            value.clamp(1, i32::MAX as i64) as i32
+        } else {
+            self.client_window().width()
+        }
     }
 
     /// <https://drafts.csswg.org/cssom-view/#dom-window-devicepixelratio>

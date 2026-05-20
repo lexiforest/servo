@@ -25,7 +25,7 @@ use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::{Dom, DomRoot};
 use crate::dom::bindings::str::DOMString;
 use crate::dom::eventtarget::EventTarget;
-use crate::dom::fontface::FontFace;
+use crate::dom::fontface::{FontFace, bimp_has_configured_font_family};
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::promise::Promise;
 use crate::dom::promisenativehandler::Callback;
@@ -77,9 +77,9 @@ impl FontFaceSet {
                     return;
                 };
 
-                let (family_name, template) = font_face
-                    .template()
-                    .expect("A loaded web font should have a template");
+                let Some((family_name, template)) = font_face.template() else {
+                    return;
+                };
                 window
                     .font_context()
                     .add_template_to_font_context(family_name, template);
@@ -137,6 +137,37 @@ impl FontFaceSet {
         // Step 4. Queue a task to fire a font load event named loading at font face set.
         // TODO: Implement support for font loading events.
     }
+}
+
+fn bimp_extract_quoted_font_families(font: &str) -> Vec<String> {
+    let mut families = Vec::new();
+    let mut current = String::new();
+    let mut quote = None;
+    let mut escaped = false;
+
+    for character in font.chars() {
+        if let Some(quote_character) = quote {
+            if escaped {
+                current.push(character);
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == quote_character {
+                families.push(current.trim().to_string());
+                current.clear();
+                quote = None;
+            } else {
+                current.push(character);
+            }
+        } else if character == '"' || character == '\'' {
+            quote = Some(character);
+        }
+    }
+
+    families
+        .into_iter()
+        .filter(|family| !family.is_empty())
+        .collect()
 }
 
 impl FontFaceSetMethods<crate::DomTypeHolder> for FontFaceSet {
@@ -253,6 +284,13 @@ impl FontFaceSetMethods<crate::DomTypeHolder> for FontFaceSet {
 
         // Step 2. Return promise. Complete the rest of these steps asynchronously.
         load_promise
+    }
+
+    /// <https://drafts.csswg.org/css-font-loading/#font-face-set-check>
+    fn Check(&self, font: DOMString, _text: DOMString) -> bool {
+        bimp_extract_quoted_font_families(&font.to_string())
+            .iter()
+            .any(|family| bimp_has_configured_font_family(family))
     }
 
     /// <https://html.spec.whatwg.org/multipage/#customstateset>
