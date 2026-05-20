@@ -10,6 +10,7 @@ use dom_struct::dom_struct;
 use html5ever::local_name;
 use js::context::JSContext;
 use servo_arc::Arc;
+use servo_config::pref;
 use servo_url::ServoUrl;
 use style::attr::AttrValue;
 use style::properties::{
@@ -449,6 +450,16 @@ pub(crate) static ENABLED_LONGHAND_PROPERTIES: LazyLock<Vec<LonghandId>> = LazyL
     enabled_longhands
 });
 
+pub(crate) fn bimp_css_property_exposed(name: &str) -> bool {
+    if name.starts_with("-moz-") {
+        return pref!(bimp_js_css_moz_prefix_enabled);
+    }
+    if name.starts_with("-webkit-") {
+        return pref!(bimp_js_css_webkit_prefix_enabled);
+    }
+    true
+}
+
 enum PotentiallyParsedPropertyId {
     Parsed(PropertyId),
     NotParsed(DOMString),
@@ -464,7 +475,10 @@ impl CSSStyleDeclarationMethods<crate::DomTypeHolder> for CSSStyleDeclaration {
         if self.readonly {
             // Readonly style declarations are used for getComputedStyle.
             // TODO: include custom properties whose computed value is not the guaranteed-invalid value.
-            return ENABLED_LONGHAND_PROPERTIES.len() as u32;
+            return ENABLED_LONGHAND_PROPERTIES
+                .iter()
+                .filter(|longhand| bimp_css_property_exposed(longhand.name()))
+                .count() as u32;
         }
         self.owner.with_block(|pdb| pdb.declarations().len() as u32)
     }
@@ -568,7 +582,10 @@ impl CSSStyleDeclarationMethods<crate::DomTypeHolder> for CSSStyleDeclaration {
         if self.readonly {
             // Readonly style declarations are used for getComputedStyle.
             // TODO: include custom properties whose computed value is not the guaranteed-invalid value.
-            let longhand = ENABLED_LONGHAND_PROPERTIES.get(index as usize)?;
+            let longhand = ENABLED_LONGHAND_PROPERTIES
+                .iter()
+                .filter(|longhand| bimp_css_property_exposed(longhand.name()))
+                .nth(index as usize)?;
             return Some(DOMString::from(longhand.name()));
         }
         self.owner.with_block(|pdb| {

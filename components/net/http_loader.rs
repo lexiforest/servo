@@ -2713,6 +2713,36 @@ fn append_bimp_client_hint_headers(request: &mut Request) {
         "sec-ch-ua-platform",
         &servo_config::pref!(bimp_js_ua_platform),
     );
+    append_quoted_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-arch",
+        &servo_config::pref!(bimp_js_ua_architecture),
+    );
+    append_quoted_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-bitness",
+        &servo_config::pref!(bimp_js_ua_bitness),
+    );
+    append_quoted_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-platform-version",
+        &servo_config::pref!(bimp_js_ua_platform_version),
+    );
+    append_quoted_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-model",
+        &servo_config::pref!(bimp_js_ua_model),
+    );
+    append_header_if_absent(
+        &mut request.headers,
+        "sec-ch-ua-full-version-list",
+        &bimp_ua_full_version_list(),
+    );
+    append_header_if_absent(
+        &mut request.headers,
+        "sec-ch-device-memory",
+        &servo_config::pref!(bimp_js_device_memory_gb).to_string(),
+    );
     if request.is_navigation_request() {
         append_header_if_absent(&mut request.headers, "upgrade-insecure-requests", "1");
     }
@@ -2736,6 +2766,43 @@ fn append_header_if_absent(headers: &mut HeaderMap, name: &'static str, value: &
     if let Ok(value) = HeaderValue::from_str(value) {
         headers.insert(HeaderName::from_static(name), value);
     }
+}
+
+fn append_quoted_header_if_absent(headers: &mut HeaderMap, name: &'static str, value: &str) {
+    if value.is_empty() || headers.contains_key(name) {
+        return;
+    }
+    append_header_if_absent(headers, name, &format!("\"{value}\""));
+}
+
+fn bimp_ua_full_version_list() -> String {
+    let full_version = servo_config::pref!(bimp_js_ua_full_version);
+    servo_config::pref!(bimp_js_ua_brands)
+        .split(',')
+        .filter_map(|entry| {
+            let mut brand = None;
+            let mut version = None;
+            for part in entry.split(';') {
+                let part = part.trim();
+                if let Some(value) = part
+                    .strip_prefix('"')
+                    .and_then(|value| value.strip_suffix('"'))
+                {
+                    brand = Some(value.to_string());
+                } else if let Some(value) = part.strip_prefix("v=\"") {
+                    version = value.strip_suffix('"').map(ToString::to_string);
+                }
+            }
+            let brand = brand?;
+            let version = if brand == "Not.A/Brand" {
+                version?
+            } else {
+                full_version.clone()
+            };
+            Some(format!("\"{brand}\";v=\"{version}\""))
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 /// Steps 8.16 to 8.18 in [HTTP network or cache fetch](https://fetch.spec.whatwg.org/#concept-http-network-or-cache-fetch)

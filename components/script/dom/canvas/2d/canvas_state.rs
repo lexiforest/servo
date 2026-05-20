@@ -1559,6 +1559,26 @@ impl CanvasState {
         let font = font_group.first(font_context).expect("couldn't find font");
         let ascent = font.metrics.ascent.to_f64_px();
         let descent = font.metrics.descent.to_f64_px();
+
+        if text.is_empty() {
+            return TextMetrics::new(
+                global,
+                cx,
+                0.0,
+                0.0,
+                0.0,
+                ascent.round(),
+                descent.round(),
+                0.0,
+                0.0,
+                ascent.round(),
+                descent.round(),
+                0.0,
+                0.0,
+                0.0,
+            );
+        }
+
         let runs = self.build_unshaped_text_runs(font_context, &text, &font_group);
 
         let mut total_advance = 0.0;

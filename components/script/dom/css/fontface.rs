@@ -10,7 +10,7 @@ use dom_struct::dom_struct;
 use fonts::{FontContext, FontContextWebFontMethods, FontTemplate, LowercaseFontFamilyName};
 use js::rust::HandleObject;
 use style::error_reporting::ParseErrorReporter;
-use style::font_face::SourceList;
+use style::font_face::{Source, SourceList};
 use style::properties::font_face::Descriptors;
 use style::stylesheets::{CssRuleType, FontFaceRule, UrlExtraData};
 use style_traits::{ParsingMode, ToCss};
@@ -166,6 +166,31 @@ fn serialize_parsed_descriptors(descriptors: &Descriptors) -> FontFaceDescriptor
     }
 }
 
+pub(crate) fn bimp_configured_font_families() -> Vec<String> {
+    servo_config::pref!(bimp_js_font_families)
+        .split('|')
+        .map(str::trim)
+        .filter(|family| !family.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+pub(crate) fn bimp_normalize_font_family(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim()
+        .to_ascii_lowercase()
+}
+
+pub(crate) fn bimp_has_configured_font_family(value: &str) -> bool {
+    let target = bimp_normalize_font_family(value);
+    bimp_configured_font_families()
+        .iter()
+        .any(|family| bimp_normalize_font_family(family) == target)
+}
+
 struct FontFaceErrorReporter {
     not_encountered_error: Cell<bool>,
 }
@@ -182,6 +207,18 @@ impl ParseErrorReporter for FontFaceErrorReporter {
 }
 
 impl FontFace {
+    fn has_configured_local_source(&self) -> bool {
+        self.urls.borrow().as_ref().is_some_and(|sources| {
+            sources.0.iter().any(|source| {
+                if let Source::Local(family_name) = source {
+                    bimp_has_configured_font_family(&family_name.name.to_string())
+                } else {
+                    false
+                }
+            })
+        })
+    }
+
     /// Construct a [`FontFace`] to be used in the case of failure in parsing the
     /// font face descriptors.
     fn new_failed_font_face(global: &GlobalScope, can_gc: CanGc) -> Self {
@@ -566,6 +603,14 @@ impl FontFaceMethods<crate::DomTypeHolder> for FontFace {
     /// loaded, it does nothing.
     /// <https://drafts.csswg.org/css-font-loading/#font-face-load>
     fn Load(&self) -> Rc<Promise> {
+        if self.has_configured_local_source() {
+            self.urls.borrow_mut().take();
+            self.status.set(FontFaceLoadStatus::Loaded);
+            self.font_status_promise
+                .resolve_native(self, CanGc::deprecated_note());
+            return self.font_status_promise.clone();
+        }
+
         let Some(sources) = self.urls.borrow_mut().take() else {
             // Step 2. If font face’s [[Urls]] slot is null, or its status attribute is anything
             // other than "unloaded", return font face’s [[FontStatusPromise]] and abort these

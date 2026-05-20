@@ -18,6 +18,7 @@ use crate::dom::bindings::error::{Error, Fallible};
 use crate::dom::bindings::reflector::Reflector;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
+use crate::dom::css::cssstyledeclaration::bimp_css_property_exposed;
 use crate::dom::window::Window;
 use crate::dom::worklet::Worklet;
 
@@ -37,6 +38,9 @@ impl CSSMethods<crate::DomTypeHolder> for CSS {
 
     /// <https://drafts.csswg.org/css-conditional/#dom-css-supports>
     fn Supports(win: &Window, property: DOMString, value: DOMString) -> bool {
+        if !bimp_css_property_exposed(&property.str()) {
+            return false;
+        }
         let mut decl = String::new();
         serialize_identifier(&property.str(), &mut decl).unwrap();
         decl.push_str(": ");
@@ -54,6 +58,9 @@ impl CSSMethods<crate::DomTypeHolder> for CSS {
     /// <https://drafts.csswg.org/css-conditional/#dom-css-supports>
     fn Supports_(win: &Window, condition: DOMString) -> bool {
         let condition = condition.str();
+        if !bimp_css_condition_prefixes_exposed(&condition) {
+            return false;
+        }
         let mut input = ParserInput::new(&condition);
         let mut input = Parser::new(&mut input);
         let cond = match parse_condition_or_declaration(&mut input) {
@@ -99,4 +106,14 @@ impl CSSMethods<crate::DomTypeHolder> for CSS {
             AlreadyRegistered => Error::InvalidModification(None),
         })
     }
+}
+
+fn bimp_css_condition_prefixes_exposed(condition: &str) -> bool {
+    if condition.contains("-moz-") && !bimp_css_property_exposed("-moz-") {
+        return false;
+    }
+    if condition.contains("-webkit-") && !bimp_css_property_exposed("-webkit-") {
+        return false;
+    }
+    true
 }

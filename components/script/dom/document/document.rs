@@ -3825,6 +3825,122 @@ impl Document {
             configurable: false
         }});
     }}
+    function bimpIllegalConstructor(name) {{
+        var fn = function() {{
+            throw new TypeError("Illegal constructor");
+        }};
+        bimpDefineChromeFunction(fn, name, 0, true);
+        fn.prototype = {{}};
+        nativeDefineProperty(fn.prototype, "constructor", {{
+            value: fn,
+            writable: true,
+            configurable: true
+        }});
+        if (typeof Symbol == "function" && Symbol.toStringTag) {{
+            nativeDefineProperty(fn.prototype, Symbol.toStringTag, {{
+                value: name,
+                configurable: true
+            }});
+        }}
+        return fn;
+    }}
+    function bimpEventConstructor(name) {{
+        var fn = function(type, init) {{
+            var event = new Event(type || "", init || {{}});
+            nativeDefineProperty(event, "acceleration", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "accelerationIncludingGravity", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "rotationRate", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "interval", {{ value: 0, configurable: true }});
+            nativeDefineProperty(event, "alpha", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "beta", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "gamma", {{ value: null, configurable: true }});
+            nativeDefineProperty(event, "absolute", {{ value: false, configurable: true }});
+            return event;
+        }};
+        bimpDefineChromeFunction(fn, name, 1, true);
+        fn.prototype = Object.create(Event.prototype);
+        nativeDefineProperty(fn.prototype, "constructor", {{
+            value: fn,
+            writable: true,
+            configurable: true
+        }});
+        if (typeof Symbol == "function" && Symbol.toStringTag) {{
+            nativeDefineProperty(fn.prototype, Symbol.toStringTag, {{
+                value: name,
+                configurable: true
+            }});
+        }}
+        return fn;
+    }}
+    function bimpInstallDeviceCheckSurface() {{
+        if (typeof globalThis.crossOriginIsolated == "undefined") {{
+            nativeDefineProperty(globalThis, "crossOriginIsolated", {{
+                value: false,
+                enumerable: true,
+                configurable: true
+            }});
+        }}
+        if (!globalThis.Notification) {{
+            var NotificationShim = bimpIllegalConstructor("Notification");
+            nativeDefineProperty(NotificationShim, "permission", {{
+                value: "default",
+                enumerable: true,
+                configurable: true
+            }});
+            nativeDefineProperty(NotificationShim, "maxActions", {{
+                value: 2,
+                enumerable: true,
+                configurable: true
+            }});
+            nativeDefineProperty(globalThis, "Notification", {{
+                value: NotificationShim,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        if (!globalThis.scheduler) {{
+            var scheduler = {{
+                postTask: bimpDefineChromeFunction(function(callback) {{
+                    return Promise.resolve().then(function() {{
+                        if (typeof callback == "function") {{
+                            return callback();
+                        }}
+                    }});
+                }}, "postTask", 1, false),
+                yield: bimpDefineChromeFunction(function() {{
+                    return Promise.resolve();
+                }}, "yield", 0, false)
+            }};
+            nativeDefineProperty(globalThis, "scheduler", {{
+                value: scheduler,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        ["Accelerometer", "Gyroscope", "Magnetometer", "AbsoluteOrientationSensor", "RelativeOrientationSensor", "AmbientLightSensor"].forEach(function(name) {{
+            if (!globalThis[name]) {{
+                nativeDefineProperty(globalThis, name, {{
+                    value: bimpIllegalConstructor(name),
+                    writable: true,
+                    configurable: true
+                }});
+            }}
+        }});
+        if (!globalThis.DeviceMotionEvent) {{
+            nativeDefineProperty(globalThis, "DeviceMotionEvent", {{
+                value: bimpEventConstructor("DeviceMotionEvent"),
+                writable: true,
+                configurable: true
+            }});
+        }}
+        if (!globalThis.DeviceOrientationEvent) {{
+            nativeDefineProperty(globalThis, "DeviceOrientationEvent", {{
+                value: bimpEventConstructor("DeviceOrientationEvent"),
+                writable: true,
+                configurable: true
+            }});
+        }}
+    }}
     function bimpSpeechLang() {{
         if (globalThis.navigator && navigator.language) {{
             return String(navigator.language);
@@ -4272,6 +4388,7 @@ impl Document {
         configurable: true
     }});
     bimpInstallChromeObject();
+    bimpInstallDeviceCheckSurface();
     bimpInstallSpeechSynthesis();
     if (globalThis.SVGElement && globalThis.SVGRect) {{
         if (!SVGElement.prototype.getBBox) {{

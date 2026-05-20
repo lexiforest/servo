@@ -389,6 +389,8 @@ pub struct Preferences {
     pub bimp_js_bluetooth_available: bool,
     /// Bimp persona override for `speechSynthesis.getVoices()`.
     pub bimp_js_speech_voices: String,
+    /// Bimp persona override for local font families exposed by FontFace APIs.
+    pub bimp_js_font_families: String,
     /// Bimp persona override for media input devices exposed by `enumerateDevices()`.
     pub bimp_js_media_audio_inputs: i64,
     /// Bimp persona override for video input devices exposed by `enumerateDevices()`.
@@ -409,10 +411,36 @@ pub struct Preferences {
     pub bimp_js_screen_avail_width: i64,
     /// Bimp persona override for available screen height.
     pub bimp_js_screen_avail_height: i64,
+    /// Bimp persona override for available screen left.
+    pub bimp_js_screen_avail_left: i64,
+    /// Bimp persona override for available screen top.
+    pub bimp_js_screen_avail_top: i64,
+    /// Bimp persona override for screen left.
+    pub bimp_js_screen_left: i64,
+    /// Bimp persona override for screen top.
+    pub bimp_js_screen_top: i64,
     /// Bimp persona override for screen color depth.
     pub bimp_js_screen_color_depth: i64,
     /// Bimp persona override for screen pixel depth.
     pub bimp_js_screen_pixel_depth: i64,
+    /// Bimp persona override for multi-screen state.
+    pub bimp_js_screen_is_extended: bool,
+    /// Bimp persona override for `screen.orientation.type`.
+    pub bimp_js_screen_orientation_type: String,
+    /// Bimp persona override for `screen.orientation.angle`.
+    pub bimp_js_screen_orientation_angle: i64,
+    /// Bimp persona override for `window.outerWidth`.
+    pub bimp_js_window_outer_width: i64,
+    /// Bimp persona override for `window.outerHeight`.
+    pub bimp_js_window_outer_height: i64,
+    /// Bimp persona override for `window.screenX`.
+    pub bimp_js_window_screen_x: i64,
+    /// Bimp persona override for `window.screenY`.
+    pub bimp_js_window_screen_y: i64,
+    /// Bimp persona override for exposing `-moz-*` CSS properties.
+    pub bimp_js_css_moz_prefix_enabled: bool,
+    /// Bimp persona override for exposing `-webkit-*` CSS properties.
+    pub bimp_js_css_webkit_prefix_enabled: bool,
     /// Bimp persona override for WebGL vendor strings.
     pub bimp_js_webgl_vendor: String,
     /// Bimp persona override for WebGL renderer strings.
@@ -638,6 +666,7 @@ impl Preferences {
             bimp_js_ua_model: String::new(),
             bimp_js_bluetooth_available: false,
             bimp_js_speech_voices: String::new(),
+            bimp_js_font_families: String::new(),
             bimp_js_media_audio_inputs: 0,
             bimp_js_media_video_inputs: 0,
             bimp_js_media_audio_outputs: 0,
@@ -648,8 +677,21 @@ impl Preferences {
             bimp_js_screen_height: 0,
             bimp_js_screen_avail_width: 0,
             bimp_js_screen_avail_height: 0,
+            bimp_js_screen_avail_left: 0,
+            bimp_js_screen_avail_top: 0,
+            bimp_js_screen_left: 0,
+            bimp_js_screen_top: 0,
             bimp_js_screen_color_depth: 0,
             bimp_js_screen_pixel_depth: 0,
+            bimp_js_screen_is_extended: false,
+            bimp_js_screen_orientation_type: String::new(),
+            bimp_js_screen_orientation_angle: 0,
+            bimp_js_window_outer_width: 0,
+            bimp_js_window_outer_height: 0,
+            bimp_js_window_screen_x: 0,
+            bimp_js_window_screen_y: 0,
+            bimp_js_css_moz_prefix_enabled: true,
+            bimp_js_css_webkit_prefix_enabled: true,
             bimp_js_webgl_vendor: String::new(),
             bimp_js_webgl_renderer: String::new(),
             bimp_js_webgl_masked_vendor: String::new(),

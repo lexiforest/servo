@@ -342,6 +342,7 @@ pub(crate) mod resizeobserver;
 pub(crate) use self::resizeobserver::*;
 pub(crate) mod response;
 pub(crate) mod screen;
+pub(crate) mod screenorientation;
 mod scrolling_box;
 pub(crate) mod security;
 pub(crate) use self::security::*;

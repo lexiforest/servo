@@ -130,9 +130,17 @@ def add_css_properties_attributes(css_properties_json: str, parser: Parser) -> N
         return preference_name
 
     css_properties = json.load(open(css_properties_json, "rb"))
+
+    def property_pref(property_name: str, data: dict) -> str:
+        if property_name.startswith("-moz-"):
+            return "bimp_js_css_moz_prefix_enabled"
+        if property_name.startswith("-webkit-"):
+            return "bimp_js_css_webkit_prefix_enabled"
+        return map_preference_name(data["pref"]) if data["pref"] else ""
+
     idl = "partial interface CSSStyleDeclaration {\n%s\n};\n" % "\n".join(
         "  [%sCEReactions, SetterThrows] attribute [LegacyNullToEmptyString] DOMString %s;" % (
-            (f'Pref="{map_preference_name(data["pref"])}", ' if data["pref"] else ""),
+            (f'Pref="{property_pref(property_name, data)}", ' if property_pref(property_name, data) else ""),
             attribute_name
         )
         for (kind, properties_list) in sorted(css_properties.items())

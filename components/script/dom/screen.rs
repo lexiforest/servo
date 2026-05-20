@@ -10,7 +10,8 @@ use servo_config::pref;
 use crate::dom::bindings::codegen::Bindings::ScreenBinding::ScreenMethods;
 use crate::dom::bindings::num::Finite;
 use crate::dom::bindings::reflector::{Reflector, reflect_dom_object};
-use crate::dom::bindings::root::{Dom, DomRoot};
+use crate::dom::bindings::root::{Dom, DomRoot, MutNullableDom};
+use crate::dom::screenorientation::ScreenOrientation;
 use crate::dom::window::Window;
 use crate::script_runtime::CanGc;
 
@@ -18,6 +19,7 @@ use crate::script_runtime::CanGc;
 pub(crate) struct Screen {
     reflector_: Reflector,
     window: Dom<Window>,
+    orientation: MutNullableDom<ScreenOrientation>,
 }
 
 impl Screen {
@@ -25,6 +27,10 @@ impl Screen {
         Screen {
             reflector_: Reflector::new(),
             window: Dom::from_ref(window),
+            orientation: MutNullableDom::new(Some(&ScreenOrientation::new(
+                window,
+                CanGc::deprecated_note(),
+            ))),
         }
     }
 
@@ -66,6 +72,16 @@ impl ScreenMethods<crate::DomTypeHolder> for Screen {
         })
     }
 
+    /// <https://drafts.csswg.org/cssom-view/#dom-screen-availleft>
+    fn AvailLeft(&self) -> i32 {
+        pref!(bimp_js_screen_avail_left).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+    }
+
+    /// <https://drafts.csswg.org/cssom-view/#dom-screen-availtop>
+    fn AvailTop(&self) -> i32 {
+        pref!(bimp_js_screen_avail_top).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+    }
+
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-width>
     fn Width(&self) -> Finite<f64> {
         let value = pref!(bimp_js_screen_width);
@@ -86,6 +102,16 @@ impl ScreenMethods<crate::DomTypeHolder> for Screen {
         })
     }
 
+    /// <https://drafts.csswg.org/cssom-view/#dom-screen-left>
+    fn Left(&self) -> i32 {
+        pref!(bimp_js_screen_left).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+    }
+
+    /// <https://drafts.csswg.org/cssom-view/#dom-screen-top>
+    fn Top(&self) -> i32 {
+        pref!(bimp_js_screen_top).clamp(i32::MIN as i64, i32::MAX as i64) as i32
+    }
+
     /// <https://drafts.csswg.org/cssom-view/#dom-screen-colordepth>
     fn ColorDepth(&self) -> u32 {
         let value = pref!(bimp_js_screen_color_depth);
@@ -96,5 +122,17 @@ impl ScreenMethods<crate::DomTypeHolder> for Screen {
     fn PixelDepth(&self) -> u32 {
         let value = pref!(bimp_js_screen_pixel_depth);
         if value > 0 { value as u32 } else { 24 }
+    }
+
+    /// <https://drafts.csswg.org/cssom-view/#dom-screen-isextended>
+    fn IsExtended(&self) -> bool {
+        pref!(bimp_js_screen_is_extended)
+    }
+
+    /// <https://w3c.github.io/screen-orientation/#dom-screen-orientation>
+    fn Orientation(&self) -> DomRoot<ScreenOrientation> {
+        self.orientation
+            .get()
+            .expect("ScreenOrientation should be initialized with Screen")
     }
 }

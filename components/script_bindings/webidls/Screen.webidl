@@ -7,8 +7,14 @@
 interface Screen {
   readonly attribute double availWidth;
   readonly attribute double availHeight;
+  readonly attribute long availLeft;
+  readonly attribute long availTop;
   readonly attribute double width;
   readonly attribute double height;
+  readonly attribute long left;
+  readonly attribute long top;
   readonly attribute unsigned long colorDepth;
   readonly attribute unsigned long pixelDepth;
+  readonly attribute boolean isExtended;
+  readonly attribute ScreenOrientation orientation;
 };

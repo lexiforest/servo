@@ -2918,6 +2918,10 @@ impl GlobalScope {
         let in_realm = InRealm::Already(&in_realm_proof);
 
         run_a_script::<DomTypeHolder, _>(self, || {
+            if let Some(window) = self.downcast::<Window>() {
+                window.Document().ensure_bimp_engine_persona_script(cx);
+            }
+
             let url = self.api_base_url();
             let fetch_options = ScriptFetchOptions::default_classic_script();
 

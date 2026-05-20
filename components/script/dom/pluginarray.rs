@@ -5,11 +5,11 @@
 use dom_struct::dom_struct;
 
 use crate::dom::bindings::codegen::Bindings::PluginArrayBinding::PluginArrayMethods;
-use crate::dom::bindings::reflector::{Reflector, reflect_dom_object};
+use crate::dom::bindings::reflector::{DomGlobal, Reflector, reflect_dom_object};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::globalscope::GlobalScope;
-use crate::dom::plugin::Plugin;
+use crate::dom::plugin::{Plugin, chrome_pdf_plugins, plugin_for_name};
 use crate::script_runtime::CanGc;
 
 #[dom_struct]
@@ -35,31 +35,38 @@ impl PluginArrayMethods<crate::DomTypeHolder> for PluginArray {
 
     /// <https://html.spec.whatwg.org/multipage/#dom-pluginarray-length>
     fn Length(&self) -> u32 {
-        0
+        chrome_pdf_plugins().len() as u32
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-pluginarray-item>
-    fn Item(&self, _index: u32) -> Option<DomRoot<Plugin>> {
-        None
+    fn Item(&self, index: u32) -> Option<DomRoot<Plugin>> {
+        chrome_pdf_plugins()
+            .get(index as usize)
+            .copied()
+            .map(|plugin| Plugin::new(&self.global(), plugin, CanGc::deprecated_note()))
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-pluginarray-nameditem>
-    fn NamedItem(&self, _name: DOMString) -> Option<DomRoot<Plugin>> {
-        None
+    fn NamedItem(&self, name: DOMString) -> Option<DomRoot<Plugin>> {
+        plugin_for_name(&name.str())
+            .map(|plugin| Plugin::new(&self.global(), plugin, CanGc::deprecated_note()))
     }
 
     /// <https://html.spec.whatwg.org/multipage/#dom-pluginarray-item>
-    fn IndexedGetter(&self, _index: u32) -> Option<DomRoot<Plugin>> {
-        None
+    fn IndexedGetter(&self, index: u32) -> Option<DomRoot<Plugin>> {
+        self.Item(index)
     }
 
     // check-tidy: no specs after this line
-    fn NamedGetter(&self, _name: DOMString) -> Option<DomRoot<Plugin>> {
-        None
+    fn NamedGetter(&self, name: DOMString) -> Option<DomRoot<Plugin>> {
+        self.NamedItem(name)
     }
 
     /// <https://heycam.github.io/webidl/#dfn-supported-property-names>
     fn SupportedPropertyNames(&self) -> Vec<DOMString> {
-        vec![]
+        chrome_pdf_plugins()
+            .iter()
+            .map(|plugin| DOMString::from(plugin.name))
+            .collect()
     }
 }
