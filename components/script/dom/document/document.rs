@@ -4749,6 +4749,7 @@ impl Document {
 }})();"#
         );
 
+        let _realm = enter_realm(self);
         let global = self.window.upcast::<GlobalScope>();
         let script = global.create_a_classic_script(
             cx,

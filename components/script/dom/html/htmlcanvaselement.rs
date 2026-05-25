@@ -11,6 +11,7 @@ use html5ever::{LocalName, Prefix, local_name, ns};
 use js::error::throw_type_error;
 use js::rust::{HandleObject, HandleValue};
 use layout_api::HTMLCanvasData;
+use net_traits::is_bimp_flash_webview;
 use pixels::{EncodedImageType, Snapshot};
 use rustc_hash::FxHashMap;
 use script_bindings::cell::{DomRefCell, Ref};
@@ -263,6 +264,9 @@ impl HTMLCanvasElement {
         cx: &mut js::context::JSContext,
         options: HandleValue,
     ) -> Option<DomRoot<WebGLRenderingContext>> {
+        if is_bimp_flash_webview(self.owner_window().webview_id()) {
+            return None;
+        }
         if let Some(ctx) = self.context() {
             return match *ctx {
                 RenderingContext::WebGL(ref ctx) => Some(DomRoot::from_ref(ctx)),
@@ -285,6 +289,9 @@ impl HTMLCanvasElement {
         cx: &mut js::context::JSContext,
         options: HandleValue,
     ) -> Option<DomRoot<WebGL2RenderingContext>> {
+        if is_bimp_flash_webview(self.owner_window().webview_id()) {
+            return None;
+        }
         if !WebGL2RenderingContext::is_webgl2_enabled(cx, self.global().reflector().get_jsobject())
         {
             return None;
@@ -317,6 +324,9 @@ impl HTMLCanvasElement {
     ) -> Option<DomRoot<GPUCanvasContext>> {
         use servo_base::generic_channel;
 
+        if is_bimp_flash_webview(self.owner_window().webview_id()) {
+            return None;
+        }
         if let Some(ctx) = self.context() {
             return match *ctx {
                 RenderingContext::WebGPU(ref ctx) => Some(DomRoot::from_ref(ctx)),

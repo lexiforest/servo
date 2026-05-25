@@ -10,6 +10,7 @@ use dom_struct::dom_struct;
 use fonts::{FontContext, FontContextWebFontMethods, FontTemplate, LowercaseFontFamilyName};
 use js::context::JSContext;
 use js::rust::HandleObject;
+use net_traits::is_bimp_flash_webview;
 use script_bindings::cell::DomRefCell;
 use script_bindings::reflector::{Reflector, reflect_dom_object_with_proto};
 use style::error_reporting::ParseErrorReporter;
@@ -643,6 +644,18 @@ impl FontFaceMethods<crate::DomTypeHolder> for FontFace {
         debug_assert_eq!(self.status.get(), FontFaceLoadStatus::Unloaded);
 
         let global = self.global();
+        if global
+            .webview_id()
+            .is_some_and(is_bimp_flash_webview)
+        {
+            self.status.set(FontFaceLoadStatus::Loaded);
+            self.font_status_promise.resolve_native(cx, self);
+            if let Some(font_face_set) = self.font_face_set.get() {
+                font_face_set.handle_font_face_status_changed(cx, self);
+            }
+            return self.font_status_promise.clone();
+        }
+
         let trusted = Trusted::new(self);
         let task_source = global
             .task_manager()

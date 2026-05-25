@@ -19,6 +19,7 @@ use net_traits::image_cache::{
 use net_traits::request::{CredentialsMode, Destination, RequestBuilder, RequestId};
 use net_traits::{
     CoreResourceThread, FetchMetadata, FetchResponseMsg, NetworkError, ResourceFetchTiming,
+    is_bimp_flash_webview,
 };
 use pixels::{Snapshot, SnapshotAlphaMode, SnapshotPixelFormat};
 use script_bindings::cell::DomRefCell;
@@ -183,6 +184,10 @@ impl HTMLVideoElement {
         // We use the image cache for poster frames so we save as much
         // network activity as possible.
         let window = self.owner_window();
+        if is_bimp_flash_webview(window.webview_id()) {
+            self.process_image_response(ImageResponse::FailedToLoadOrDecode, cx);
+            return;
+        }
         let image_cache = window.image_cache();
         let cache_result = image_cache.get_cached_image_status(
             poster_url.url(),
