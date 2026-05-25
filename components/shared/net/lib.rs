@@ -64,6 +64,18 @@ pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
         .contains(&webview_id)
 }
 
+pub fn bimp_flash_should_skip_resource_destination(destination: request::Destination) -> bool {
+    matches!(
+        destination,
+        request::Destination::Audio |
+            request::Destination::Font |
+            request::Destination::Image |
+            request::Destination::Manifest |
+            request::Destination::Track |
+            request::Destination::Video
+    )
+}
+
 use crate::fetch::headers::determine_nosniff;
 use crate::filemanager_thread::FileManagerThreadMsg;
 use crate::http_status::HttpStatus;
@@ -1344,3 +1356,33 @@ pub fn set_default_accept_language(headers: &mut HeaderMap) {
 }
 
 pub static PRIVILEGED_SECRET: LazyLock<u32> = LazyLock::new(|| rng().next_u32());
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::request::Destination;
+
+    #[test]
+    fn bimp_flash_skips_only_heavy_resource_destinations() {
+        for destination in [
+            Destination::Audio,
+            Destination::Font,
+            Destination::Image,
+            Destination::Manifest,
+            Destination::Track,
+            Destination::Video,
+        ] {
+            assert!(bimp_flash_should_skip_resource_destination(destination));
+        }
+
+        for destination in [
+            Destination::Document,
+            Destination::Script,
+            Destination::Style,
+            Destination::Xslt,
+            Destination::None,
+        ] {
+            assert!(!bimp_flash_should_skip_resource_destination(destination));
+        }
+    }
+}

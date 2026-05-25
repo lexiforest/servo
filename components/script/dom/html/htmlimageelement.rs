@@ -25,6 +25,7 @@ use net_traits::image_cache::{
 use net_traits::request::{CorsSettings, Destination, Initiator, RequestId};
 use net_traits::{
     FetchMetadata, FetchResponseMsg, NetworkError, ReferrerPolicy, ResourceFetchTiming,
+    is_bimp_flash_webview,
 };
 use num_traits::ToPrimitive;
 use pixels::{CorsStatus, ImageMetadata, Snapshot};
@@ -355,6 +356,10 @@ impl HTMLImageElement {
     /// Update the current image with a valid URL.
     fn fetch_image(&self, img_url: &ServoUrl, cx: &mut js::context::JSContext) {
         let window = self.owner_window();
+        if is_bimp_flash_webview(window.webview_id()) {
+            self.process_image_response(ImageResponse::FailedToLoadOrDecode, cx);
+            return;
+        }
 
         let cache_result = window.image_cache().get_cached_image_status(
             img_url.clone(),

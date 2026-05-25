@@ -577,11 +577,7 @@ async fn obtain_response(
 
         let mut response = HyperResponse::builder()
             .status(curl_response.status)
-            .body(
-                Full::new(Bytes::from(curl_response.body))
-                    .map_err(|_| unreachable!())
-                    .boxed(),
-            )
+            .body(curl_response.body)
             .map_err(|error| NetworkError::HttpError(error.to_string()))?;
         *response.headers_mut() = curl_response.headers;
 

@@ -26,6 +26,7 @@ use media::{GLPlayerMsg, GLPlayerMsgForward, WindowGLContext};
 use net_traits::request::{Destination, RequestId};
 use net_traits::{
     CoreResourceThread, FetchMetadata, FilteredMetadata, NetworkError, ResourceFetchTiming,
+    is_bimp_flash_webview,
 };
 use paint_api::{CrossProcessPaintApi, ImageUpdate, SerializableImageData};
 use pixels::RasterImage;
@@ -1503,6 +1504,11 @@ impl HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#concept-media-load-resource>
     fn resource_fetch_algorithm(&self, resource: Resource) {
+        if is_bimp_flash_webview(self.owner_document().webview_id()) {
+            self.resource_selection_algorithm_failure_steps();
+            return;
+        }
+
         if let Err(e) = self.create_media_player(&resource) {
             error!("Create media player error {:?}", e);
             self.resource_selection_algorithm_failure_steps();

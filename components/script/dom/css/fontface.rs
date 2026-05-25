@@ -9,6 +9,7 @@ use cssparser::{Parser, ParserInput};
 use dom_struct::dom_struct;
 use fonts::{FontContext, FontContextWebFontMethods, FontTemplate, LowercaseFontFamilyName};
 use js::rust::HandleObject;
+use net_traits::is_bimp_flash_webview;
 use style::error_reporting::ParseErrorReporter;
 use style::font_face::{Source, SourceList};
 use style::properties::font_face::Descriptors;
@@ -624,6 +625,19 @@ impl FontFaceMethods<crate::DomTypeHolder> for FontFace {
         debug_assert_eq!(self.status.get(), FontFaceLoadStatus::Unloaded);
 
         let global = self.global();
+        if global
+            .webview_id()
+            .is_some_and(is_bimp_flash_webview)
+        {
+            self.status.set(FontFaceLoadStatus::Loaded);
+            self.font_status_promise
+                .resolve_native(self, CanGc::deprecated_note());
+            if let Some(font_face_set) = self.font_face_set.get() {
+                font_face_set.handle_font_face_status_changed(self);
+            }
+            return self.font_status_promise.clone();
+        }
+
         let trusted = Trusted::new(self);
         let task_source = global
             .task_manager()
