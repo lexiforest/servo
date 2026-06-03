@@ -83,6 +83,10 @@ impl ServiceWorker {
         service_worker.upcast().fire_event(cx, atom!("error"));
     }
 
+    pub(crate) fn set_initial_state(&self, state: ServiceWorkerState) {
+        self.state.set(state);
+    }
+
     pub(crate) fn get_script_url(&self) -> ServoUrl {
         ServoUrl::parse(&self.script_url.borrow().clone()).unwrap()
     }

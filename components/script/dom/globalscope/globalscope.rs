@@ -907,7 +907,7 @@ impl GlobalScope {
         // Step 2.8
         if let Some(worker_id) = active_worker {
             let worker = self.get_serviceworker(script_url, scope, worker_id, can_gc);
-            worker.set_transition_state(ServiceWorkerState::Activated, can_gc);
+            worker.set_initial_state(ServiceWorkerState::Activated);
             new_registration.set_active(&worker);
         }
 
