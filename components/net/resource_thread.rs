@@ -960,8 +960,5 @@ fn bimp_flash_blocks_request(request: &net_traits::request::Request) -> bool {
     request
         .target_webview_id
         .is_some_and(net_traits::is_bimp_flash_webview)
-        && matches!(
-            request.destination,
-            Destination::Font | Destination::Image | Destination::Style
-        )
+        && matches!(request.destination, Destination::Font | Destination::Image)
 }
