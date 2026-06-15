@@ -18,7 +18,7 @@ const DEFAULT_CHROME_TARGET: &str = "chrome136";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
-pub struct CurlImpersonateResponse {
+pub struct BimpNetResponse {
     pub status: StatusCode,
     pub headers: HeaderMap,
     pub body: BoxBody<Bytes, hyper::Error>,
@@ -34,8 +34,8 @@ pub async fn send(
     headers: HeaderMap,
     body: Option<Vec<u8>>,
     user_agent: String,
-) -> Result<CurlImpersonateResponse, NetworkError> {
-    let target = curl_target_for_user_agent(&user_agent);
+) -> Result<BimpNetResponse, NetworkError> {
+    let target = impersonation_target_for_user_agent(&user_agent);
     let client = Client::new(Config {
         impersonation_target: target.clone(),
         connect_timeout: CONNECT_TIMEOUT,
@@ -47,13 +47,11 @@ pub async fn send(
     let request = build_request(&url, method.clone(), headers.clone(), body.clone())?;
     match client.send(request).await {
         Ok(response) => {
-            debug!("curl-impersonate {} -> {}", url, response.status());
+            debug!("bimp-net {} -> {}", url, response.status());
             Ok(convert_response(response))
         },
         Err(error) if target != DEFAULT_CHROME_TARGET => {
-            warn!(
-                "curl-impersonate target `{target}` failed, retrying `{DEFAULT_CHROME_TARGET}`: {error}"
-            );
+            warn!("bimp-net target `{target}` failed, retrying `{DEFAULT_CHROME_TARGET}`: {error}");
             let client = Client::new(Config {
                 impersonation_target: DEFAULT_CHROME_TARGET.to_string(),
                 connect_timeout: CONNECT_TIMEOUT,
@@ -89,7 +87,7 @@ fn build_request(
         let Some(name) = name else {
             continue;
         };
-        if should_forward_header_to_curl(&name, top_level_navigation) {
+        if should_forward_header_to_bimp_net(&name, top_level_navigation) {
             request.headers_mut().append(name, value);
         }
     }
@@ -100,9 +98,9 @@ fn build_request(
     Ok(request)
 }
 
-fn convert_response(response: http::Response<BimpNetBody>) -> CurlImpersonateResponse {
+fn convert_response(response: http::Response<BimpNetBody>) -> BimpNetResponse {
     let (parts, body) = response.into_parts();
-    CurlImpersonateResponse {
+    BimpNetResponse {
         status: parts.status,
         headers: parts.headers,
         body: BoxBody::new(ServoBody { inner: body }),
@@ -124,7 +122,7 @@ impl Body for ServoBody {
         match Pin::new(&mut self.inner).poll_frame(cx) {
             Poll::Ready(Some(Ok(frame))) => Poll::Ready(Some(Ok(frame))),
             Poll::Ready(Some(Err(error))) => {
-                warn!("curl-impersonate body stream ended with an error: {error}");
+                warn!("bimp-net body stream ended with an error: {error}");
                 Poll::Ready(None)
             },
             Poll::Ready(None) => Poll::Ready(None),
@@ -144,25 +142,25 @@ fn is_top_level_navigation(headers: &HeaderMap) -> bool {
         .is_some_and(|value| value.eq_ignore_ascii_case("navigate"))
 }
 
-fn should_forward_header_to_curl(name: &HeaderName, top_level_navigation: bool) -> bool {
+fn should_forward_header_to_bimp_net(name: &HeaderName, top_level_navigation: bool) -> bool {
     match name.as_str() {
         "host" | "connection" | "user-agent" | "accept-encoding" | "content-length" => false,
-        "accept" |
-        "accept-language" |
-        "upgrade-insecure-requests" |
-        "sec-fetch-dest" |
-        "sec-fetch-mode" |
-        "sec-fetch-site" |
-        "sec-fetch-user" |
-        "sec-ch-ua" |
-        "sec-ch-ua-mobile" |
-        "sec-ch-ua-platform" |
-        "sec-ch-ua-arch" |
-        "sec-ch-ua-bitness" |
-        "sec-ch-ua-platform-version" |
-        "sec-ch-ua-full-version-list" |
-        "sec-ch-ua-model" |
-        "sec-ch-device-memory" => !top_level_navigation,
+        "accept"
+        | "accept-language"
+        | "upgrade-insecure-requests"
+        | "sec-fetch-dest"
+        | "sec-fetch-mode"
+        | "sec-fetch-site"
+        | "sec-fetch-user"
+        | "sec-ch-ua"
+        | "sec-ch-ua-mobile"
+        | "sec-ch-ua-platform"
+        | "sec-ch-ua-arch"
+        | "sec-ch-ua-bitness"
+        | "sec-ch-ua-platform-version"
+        | "sec-ch-ua-full-version-list"
+        | "sec-ch-ua-model"
+        | "sec-ch-device-memory" => !top_level_navigation,
         _ => true,
     }
 }
@@ -178,7 +176,7 @@ fn suppress_navigation_only_default_headers(headers: &mut HeaderMap) {
     );
 }
 
-fn curl_target_for_user_agent(user_agent: &str) -> String {
+fn impersonation_target_for_user_agent(user_agent: &str) -> String {
     major_version_after_token(user_agent, "Chrome/")
         .or_else(|| major_version_after_token(user_agent, "Chromium/"))
         .or_else(|| major_version_after_token(user_agent, "CriOS/"))
@@ -195,7 +193,7 @@ fn major_version_after_token(value: &str, token: &str) -> Option<u16> {
 }
 
 fn network_error(error: Error) -> NetworkError {
-    NetworkError::ResourceLoadError(format!("curl-impersonate failed: {error}"))
+    NetworkError::ResourceLoadError(format!("bimp-net failed: {error}"))
 }
 
 #[cfg(test)]
@@ -203,36 +201,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn curl_target_tracks_chrome_user_agent() {
+    fn impersonation_target_tracks_chrome_user_agent() {
         assert_eq!(
-            curl_target_for_user_agent("Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36"),
+            impersonation_target_for_user_agent("Mozilla/5.0 Chrome/142.0.0.0 Safari/537.36"),
             "chrome142"
         );
     }
 
     #[test]
-    fn skips_fingerprint_headers_so_curl_can_use_native_defaults() {
-        assert!(!should_forward_header_to_curl(
+    fn skips_fingerprint_headers_so_bimp_net_can_use_native_defaults() {
+        assert!(!should_forward_header_to_bimp_net(
             &HeaderName::from_static("user-agent"),
             true
         ));
-        assert!(!should_forward_header_to_curl(
+        assert!(!should_forward_header_to_bimp_net(
             &HeaderName::from_static("sec-ch-ua"),
             true
         ));
-        assert!(!should_forward_header_to_curl(
+        assert!(!should_forward_header_to_bimp_net(
             &HeaderName::from_static("accept"),
             true
         ));
-        assert!(should_forward_header_to_curl(
+        assert!(should_forward_header_to_bimp_net(
             &HeaderName::from_static("sec-fetch-mode"),
             false
         ));
-        assert!(should_forward_header_to_curl(
+        assert!(should_forward_header_to_bimp_net(
             &HeaderName::from_static("cookie"),
             true
         ));
-        assert!(should_forward_header_to_curl(
+        assert!(should_forward_header_to_bimp_net(
             &HeaderName::from_static("content-type"),
             true
         ));

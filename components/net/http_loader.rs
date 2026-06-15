@@ -78,7 +78,7 @@ use crate::connector::{
 };
 use crate::cookie::ServoCookie;
 use crate::cookie_storage::CookieStorage;
-use crate::curl_impersonate_loader;
+use crate::bimp_net_loader;
 use crate::decoder::Decoder;
 use crate::devtools::{
     prepare_devtools_request, send_request_to_devtools, send_response_values_to_devtools,
@@ -524,7 +524,7 @@ async fn obtain_response(
     // https://url.spec.whatwg.org/#percent-encoded-bytes
     let encoded_url = utf8_percent_encode(url.as_str(), FRAGMENT).to_string();
 
-    if curl_impersonate_loader::supports_url(url) {
+    if bimp_net_loader::supports_url(url) {
         let request_body =
             collect_buffered_request_body(body_sender, fetch_terminated, devtools_bytes.clone())
                 .await?;
@@ -541,7 +541,7 @@ async fn obtain_response(
         }
 
         let send_start = CrossProcessInstant::now();
-        let curl_response = curl_impersonate_loader::send(
+        let bimp_net_response = bimp_net_loader::send(
             url.clone(),
             method.clone(),
             headers.clone(),
@@ -574,10 +574,10 @@ async fn obtain_response(
         });
 
         let mut response = HyperResponse::builder()
-            .status(curl_response.status)
-            .body(curl_response.body)
+            .status(bimp_net_response.status)
+            .body(bimp_net_response.body)
             .map_err(|error| NetworkError::HttpError(error.to_string()))?;
-        *response.headers_mut() = curl_response.headers;
+        *response.headers_mut() = bimp_net_response.headers;
 
         return Ok((Decoder::detect(response, url.is_secure_scheme()), msg));
     }
