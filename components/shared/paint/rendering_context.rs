@@ -4,22 +4,41 @@
 
 #![deny(unsafe_code)]
 
-use std::cell::{Cell, RefCell, RefMut};
+use std::cell::Cell;
+#[cfg(feature = "rendering")]
+use std::cell::{RefCell, RefMut};
+#[cfg(feature = "rendering")]
 use std::num::NonZeroU32;
 use std::rc::Rc;
+#[cfg(feature = "rendering")]
 use std::sync::Arc;
 
 use dpi::PhysicalSize;
 use embedder_traits::RefreshDriver;
+#[cfg(feature = "rendering")]
+use euclid::Point2D;
+use euclid::Size2D;
+#[cfg(feature = "rendering")]
 use euclid::default::{Rect, Size2D as UntypedSize2D};
-use euclid::{Point2D, Size2D};
+#[cfg(feature = "rendering")]
 use gleam::gl::{self, Gl};
+#[cfg(feature = "rendering")]
 use glow::{HasContext, NativeFramebuffer};
 use image::RgbaImage;
+#[cfg(feature = "rendering")]
 use log::{debug, trace, warn};
+#[cfg(feature = "rendering")]
 use raw_window_handle::{DisplayHandle, WindowHandle};
+#[cfg(feature = "rendering")]
 pub use surfman::Error;
+#[cfg(not(feature = "rendering"))]
+#[derive(Debug)]
+pub enum Error {
+    Failed,
+}
+#[cfg(feature = "rendering")]
 use surfman::chains::{PreserveBuffer, SwapChain};
+#[cfg(feature = "rendering")]
 use surfman::{
     Adapter, Connection, Context, ContextAttributeFlags, ContextAttributes, Device, GLApi,
     GLVersion, NativeContext, NativeWidget, Surface, SurfaceAccess, SurfaceInfo, SurfaceTexture,
@@ -61,11 +80,14 @@ pub trait RenderingContext {
     /// commands.
     fn make_current(&self) -> Result<(), Error>;
     /// Returns the `gleam` version of the OpenGL or GLES API.
+    #[cfg(feature = "rendering")]
     fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl>;
     /// Returns the OpenGL or GLES API.
+    #[cfg(feature = "rendering")]
     fn glow_gl_api(&self) -> Arc<glow::Context>;
     /// Creates a texture from a given surface and returns the surface texture,
     /// the OpenGL texture object, and the size of the surface. Default to `None`.
+    #[cfg(feature = "rendering")]
     fn create_texture(
         &self,
         _surface: Surface,
@@ -73,10 +95,12 @@ pub trait RenderingContext {
         None
     }
     /// Destroys the texture and returns the surface. Default to `None`.
+    #[cfg(feature = "rendering")]
     fn destroy_texture(&self, _surface_texture: SurfaceTexture) -> Option<Surface> {
         None
     }
     /// The connection to the display server for WebGL. Default to `None`.
+    #[cfg(feature = "rendering")]
     fn connection(&self) -> Option<Connection> {
         None
     }
@@ -84,6 +108,52 @@ pub trait RenderingContext {
     /// then the default timer-based [`RefreshDriver`] will be used.
     fn refresh_driver(&self) -> Option<Rc<dyn RefreshDriver>> {
         None
+    }
+}
+
+/// A rendering context for embedders that never paint pixels.
+///
+/// This is intended for DOM/network-only embedding modes that still need a `WebView`
+/// but do not need WebRender, screenshots, or presentation surfaces.
+pub struct NullRenderingContext {
+    size: Cell<PhysicalSize<u32>>,
+}
+
+impl NullRenderingContext {
+    pub fn new(size: PhysicalSize<u32>) -> Self {
+        Self {
+            size: Cell::new(size),
+        }
+    }
+}
+
+impl RenderingContext for NullRenderingContext {
+    fn read_to_image(&self, _source_rectangle: DeviceIntRect) -> Option<RgbaImage> {
+        None
+    }
+
+    fn size(&self) -> PhysicalSize<u32> {
+        self.size.get()
+    }
+
+    fn resize(&self, size: PhysicalSize<u32>) {
+        self.size.set(size);
+    }
+
+    fn present(&self) {}
+
+    fn make_current(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    #[cfg(feature = "rendering")]
+    fn gleam_gl_api(&self) -> Rc<dyn gleam::gl::Gl> {
+        panic!("NullRenderingContext has no OpenGL API")
+    }
+
+    #[cfg(feature = "rendering")]
+    fn glow_gl_api(&self) -> Arc<glow::Context> {
+        panic!("NullRenderingContext has no OpenGL API")
     }
 }
 
@@ -95,6 +165,7 @@ pub trait RenderingContext {
 /// The `SurfmanRenderingContext` struct encapsulates the necessary data and methods
 /// to interact with the Surfman library, including creating surfaces, binding surfaces,
 /// resizing surfaces, presenting rendered frames, and managing the OpenGL context state.
+#[cfg(feature = "rendering")]
 struct SurfmanRenderingContext {
     gleam_gl: Rc<dyn Gl>,
     glow_gl: Arc<glow::Context>,
@@ -103,6 +174,7 @@ struct SurfmanRenderingContext {
     refresh_driver: Option<Rc<dyn RefreshDriver>>,
 }
 
+#[cfg(feature = "rendering")]
 impl Drop for SurfmanRenderingContext {
     fn drop(&mut self) {
         let device = &mut self.device.borrow_mut();
@@ -111,6 +183,7 @@ impl Drop for SurfmanRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl SurfmanRenderingContext {
     fn new(
         connection: &Connection,
@@ -119,9 +192,9 @@ impl SurfmanRenderingContext {
     ) -> Result<Self, Error> {
         let device = connection.create_device(adapter)?;
 
-        let flags = ContextAttributeFlags::ALPHA |
-            ContextAttributeFlags::DEPTH |
-            ContextAttributeFlags::STENCIL;
+        let flags = ContextAttributeFlags::ALPHA
+            | ContextAttributeFlags::DEPTH
+            | ContextAttributeFlags::STENCIL;
         let gl_api = connection.gl_api();
         let version = match &gl_api {
             GLApi::GLES => surfman::GLVersion { major: 3, minor: 0 },
@@ -286,12 +359,14 @@ impl SurfmanRenderingContext {
 /// it is more convenient to have consistent, but slower display output.
 ///
 /// The results of the render can be accessed via [`RenderingContext::read_to_image`].
+#[cfg(feature = "rendering")]
 pub struct SoftwareRenderingContext {
     size: Cell<PhysicalSize<u32>>,
     surfman_rendering_info: SurfmanRenderingContext,
     swap_chain: SwapChain<Device>,
 }
 
+#[cfg(feature = "rendering")]
 impl SoftwareRenderingContext {
     pub fn new(size: PhysicalSize<u32>) -> Result<Self, Error> {
         if size.width == 0 || size.height == 0 {
@@ -320,6 +395,7 @@ impl SoftwareRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl Drop for SoftwareRenderingContext {
     fn drop(&mut self) {
         let device = &mut self.surfman_rendering_info.device.borrow_mut();
@@ -328,6 +404,7 @@ impl Drop for SoftwareRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl RenderingContext for SoftwareRenderingContext {
     fn prepare_for_rendering(&self) {
         self.surfman_rendering_info.prepare_for_rendering();
@@ -404,12 +481,14 @@ impl RenderingContext for SoftwareRenderingContext {
 ///
 /// If you would like to paint to only a portion of the window, consider using
 /// [`OffscreenRenderingContext`] by calling [`WindowRenderingContext::offscreen_context`].
+#[cfg(feature = "rendering")]
 pub struct WindowRenderingContext {
     /// The inner size of the window in physical pixels which excludes OS decorations.
     size: Cell<PhysicalSize<u32>>,
     surfman_context: SurfmanRenderingContext,
 }
 
+#[cfg(feature = "rendering")]
 impl WindowRenderingContext {
     pub fn new(
         display_handle: DisplayHandle,
@@ -528,6 +607,7 @@ impl WindowRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl RenderingContext for WindowRenderingContext {
     fn prepare_for_rendering(&self) {
         self.surfman_context.prepare_for_rendering();
@@ -587,6 +667,7 @@ impl RenderingContext for WindowRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 struct Framebuffer {
     gl: Rc<dyn Gl>,
     framebuffer_id: gl::GLuint,
@@ -594,6 +675,7 @@ struct Framebuffer {
     texture_id: gl::GLuint,
 }
 
+#[cfg(feature = "rendering")]
 impl Framebuffer {
     fn bind(&self) {
         trace!("Binding FBO {}", self.framebuffer_id);
@@ -602,6 +684,7 @@ impl Framebuffer {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl Drop for Framebuffer {
     fn drop(&mut self) {
         self.gl.bind_framebuffer(gl::FRAMEBUFFER, 0);
@@ -611,6 +694,7 @@ impl Drop for Framebuffer {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl Framebuffer {
     fn new(gl: Rc<dyn Gl>, size: PhysicalSize<u32>) -> Self {
         let framebuffer_ids = gl.gen_framebuffers(1);
@@ -729,14 +813,17 @@ impl Framebuffer {
     }
 }
 
+#[cfg(feature = "rendering")]
 pub struct OffscreenRenderingContext {
     parent_context: Rc<WindowRenderingContext>,
     size: Cell<PhysicalSize<u32>>,
     framebuffer: RefCell<Framebuffer>,
 }
 
+#[cfg(feature = "rendering")]
 type RenderToParentCallback = Box<dyn Fn(&glow::Context, Rect<i32>) + Send + Sync>;
 
+#[cfg(feature = "rendering")]
 impl OffscreenRenderingContext {
     fn new(parent_context: Rc<WindowRenderingContext>, size: PhysicalSize<u32>) -> Self {
         assert!(
@@ -815,6 +902,7 @@ impl OffscreenRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 impl RenderingContext for OffscreenRenderingContext {
     fn size(&self) -> PhysicalSize<u32> {
         self.size.get()
@@ -903,6 +991,7 @@ impl RenderingContext for OffscreenRenderingContext {
     }
 }
 
+#[cfg(feature = "rendering")]
 fn print_diagnostics_information_on_context_creation_failure(
     device: &Device,
     desired_api: GLApi,

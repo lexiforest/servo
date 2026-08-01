@@ -8,6 +8,8 @@ use std::rc::{Rc, Weak};
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(not(feature = "rendering"))]
+use crate::null_paint::{InitialPaintState, Paint};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 pub use embedder_traits::*;
 use env_logger::Builder as EnvLoggerBuilder;
@@ -27,12 +29,14 @@ use ipc_channel::ipc::{self, IpcSender};
 use layout::LayoutFactoryImpl;
 use layout_api::ScriptThreadFactory;
 use log::{Log, Metadata, Record, debug, warn};
+#[cfg(feature = "rendering")]
 use media::{GlApi, NativeDisplay, WindowGLContext};
 use net::embedder::NetToEmbedderMsg;
 use net::image_cache::ImageCacheFactoryImpl;
 use net::protocols::ProtocolRegistry;
 use net::resource_thread::new_resource_threads;
 use net_traits::{ResourceThreads, exit_fetch_thread, start_fetch_thread};
+#[cfg(feature = "rendering")]
 use paint::{InitialPaintState, Paint};
 pub use paint_api::rendering_context::RenderingContext;
 use paint_api::{CrossProcessPaintApi, PaintMessage, PaintProxy};
@@ -72,6 +76,7 @@ use servo_geometry::{
     DeviceIndependentIntRect, convert_rect_to_css_pixel, convert_size_to_css_pixel,
 };
 use servo_media::ServoMedia;
+#[cfg(feature = "rendering")]
 use servo_media::player::context::GlContext;
 use servo_wakelock::DefaultWakeLockDelegate;
 use storage::new_storage_threads;
@@ -898,7 +903,7 @@ impl Servo {
             Ordering::Relaxed,
         );
 
-        if !opts.multiprocess {
+        if !opts.multiprocess && !pref!(bimp_flash_runtime_enabled) {
             media_platform::init();
         }
 
@@ -1041,6 +1046,7 @@ impl Servo {
 
     /// **EXPERIMENTAL:** Intialize GL accelerated media playback. This currently only works on a limited number
     /// of platforms. This should be run *before* creating [`Servo`] and its first [`WebView`].
+    #[cfg(feature = "rendering")]
     pub fn initialize_gl_accelerated_media(display: NativeDisplay, api: GlApi, context: GlContext) {
         WindowGLContext::initialize(display, api, context)
     }
@@ -1231,7 +1237,14 @@ fn create_constellation(
         webxr_registry: Some(paint.webxr_main_thread_registry()),
         #[cfg(not(feature = "webxr"))]
         webxr_registry: None,
-        webgl_threads: Some(paint.webgl_threads()),
+        #[cfg(feature = "rendering")]
+        webgl_threads: if pref!(bimp_flash_runtime_enabled) {
+            None
+        } else {
+            Some(paint.webgl_threads())
+        },
+        #[cfg(not(feature = "rendering"))]
+        webgl_threads: None,
         webrender_external_image_id_manager: paint.webrender_external_image_id_manager(),
         #[cfg(feature = "webgpu")]
         wgpu_image_map: paint.webgpu_image_map(),
@@ -1311,7 +1324,9 @@ pub fn run_content_process(token: String) {
 
     match unprivileged_content {
         UnprivilegedContent::ScriptEventLoop(new_event_loop_info) => {
-            media_platform::init();
+            if !pref!(bimp_flash_runtime_enabled) {
+                media_platform::init();
+            }
 
             // Start the fetch thread for this content process.
             let fetch_thread_join_handle = start_fetch_thread();

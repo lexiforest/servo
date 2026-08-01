@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Weak};
 use std::thread;
 
+use content_security_policy::Violation;
 use cookie::Cookie;
 use crossbeam_channel::Sender;
 use devtools_traits::DevtoolsControlMsg;
@@ -22,12 +23,12 @@ use log::{debug, trace, warn};
 use net_traits::blob_url_store::{BlobTokenCommunicator, parse_blob_url};
 use net_traits::filemanager_thread::FileTokenCheck;
 use net_traits::pub_domains::public_suffix_list_size_of;
-use net_traits::request::{Destination, PreloadEntry, PreloadId, RequestBuilder, RequestId};
+use net_traits::request::{Destination, PreloadEntry, PreloadId, Request, RequestBuilder, RequestId};
 use net_traits::response::{Response, ResponseInit};
 use net_traits::{
     AsyncRuntime, CookieAsyncResponse, CookieData, CookieSource, CoreResourceMsg,
     CoreResourceThread, CustomResponseMediator, DiscardFetch, FetchChannels, FetchTaskTarget,
-    NetworkError, ResourceFetchTiming, ResourceThreads, ResourceTimingType, WebSocketDomAction,
+    ResourceFetchTiming, ResourceThreads, ResourceTimingType, WebSocketDomAction,
     WebSocketNetworkEvent,
 };
 use parking_lot::{Mutex, RwLock};
@@ -45,7 +46,7 @@ use servo_base::generic_channel::{
     self, CallbackSetter, GenericCallback, GenericReceiver, GenericReceiverSet,
     GenericSelectionResult,
 };
-use servo_base::id::CookieStoreId;
+use servo_base::id::{CookieStoreId, WebViewId};
 use servo_url::{ImmutableOrigin, ServoUrl};
 use tokio::sync::Mutex as TokioMutex;
 
@@ -70,6 +71,62 @@ use crate::http_loader::{HttpState, http_redirect_fetch};
 use crate::protocols::ProtocolRegistry;
 use crate::request_interceptor::RequestInterceptor;
 use crate::websocket_loader::create_handshake_request;
+
+struct BimpFlashDocumentRecorder<T> {
+    inner: T,
+    webview_id: Option<WebViewId>,
+    url: ServoUrl,
+    bytes: Vec<u8>,
+}
+
+impl<T> BimpFlashDocumentRecorder<T> {
+    fn new(inner: T, webview_id: Option<WebViewId>, url: ServoUrl) -> Self {
+        Self {
+            inner,
+            webview_id,
+            url,
+            bytes: Vec::new(),
+        }
+    }
+}
+
+impl<T: FetchTaskTarget> FetchTaskTarget for BimpFlashDocumentRecorder<T> {
+    fn process_request_body(&mut self, request: &Request) {
+        self.inner.process_request_body(request);
+    }
+
+    fn process_response(&mut self, request: &Request, response: &Response) {
+        self.inner.process_response(request, response);
+    }
+
+    fn process_response_chunk(&mut self, request: &Request, chunk: Vec<u8>) {
+        if self.webview_id.is_some() {
+            self.bytes.extend_from_slice(&chunk);
+        }
+        self.inner.process_response_chunk(request, chunk);
+    }
+
+    fn process_response_eof(&mut self, request: &Request, response: &Response) {
+        if let Some(webview_id) = self.webview_id &&
+            !response.is_network_error()
+        {
+            net_traits::set_bimp_flash_document_source(
+                webview_id,
+                self.url.clone(),
+                std::mem::take(&mut self.bytes),
+            );
+        }
+        self.inner.process_response_eof(request, response);
+    }
+
+    fn process_csp_violations(
+        &mut self,
+        request: &Request,
+        violations: Vec<Violation>,
+    ) {
+        self.inner.process_csp_violations(request, violations);
+    }
+}
 
 /// Load a file with CA certificate and produce a RootCertStore with the results.
 fn load_root_cert_store_from_file(file_path: String) -> io::Result<Vec<CertificateDer<'static>>> {
@@ -769,7 +826,7 @@ impl CoreResourceManager {
         &self,
         request_builder: RequestBuilder,
         res_init_: Option<ResponseInit>,
-        mut sender: Target,
+        sender: Target,
         http_state: &Arc<HttpState>,
         cancellation_listener: Arc<CancellationListener>,
         protocols: Arc<ProtocolRegistry>,
@@ -786,12 +843,24 @@ impl CoreResourceManager {
 
         let request = request_builder.build();
         let url = request.current_url();
+        let document_source_webview_id =
+            if request.destination == Destination::Document &&
+                request
+                    .target_webview_id
+                    .is_some_and(net_traits::is_bimp_flash_webview)
+            {
+                request.target_webview_id
+            } else {
+                None
+            };
+        let mut sender =
+            BimpFlashDocumentRecorder::new(sender, document_source_webview_id, url.clone());
         if bimp_flash_blocks_request(&request) {
             debug!(
                 "Bimp flash mode blocked visual resource {} ({:?})",
                 url, request.destination
             );
-            let response = Response::network_error(NetworkError::LoadCancelled);
+            let response = Response::new(url.clone(), ResourceFetchTiming::new(timing_type));
             sender.process_response(&request, &response);
             sender.process_response_eof(&request, &response);
             return;

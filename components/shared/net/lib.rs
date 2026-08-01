@@ -4,7 +4,7 @@
 
 #![deny(unsafe_code)]
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{self, Debug, Display};
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
@@ -41,7 +41,8 @@ pub struct CookieOperationId(pub u64);
 
 static BIMP_FLASH_WEBVIEWS: LazyLock<Mutex<HashSet<WebViewId>>> =
     LazyLock::new(|| Mutex::new(HashSet::new()));
-
+static BIMP_FLASH_DOCUMENT_SOURCES: LazyLock<Mutex<HashMap<WebViewId, (ServoUrl, Vec<u8>)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {
     let mut webviews = BIMP_FLASH_WEBVIEWS
         .lock()
@@ -55,6 +56,7 @@ pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {
 
 pub fn remove_bimp_flash_webview(webview_id: WebViewId) {
     set_bimp_flash_webview(webview_id, false);
+    clear_bimp_flash_document_source(webview_id);
 }
 
 pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
@@ -62,6 +64,28 @@ pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
         .lock()
         .expect("Bimp flash webview registry poisoned")
         .contains(&webview_id)
+}
+
+pub fn set_bimp_flash_document_source(webview_id: WebViewId, url: ServoUrl, bytes: Vec<u8>) {
+    BIMP_FLASH_DOCUMENT_SOURCES
+        .lock()
+        .expect("Bimp flash document source registry poisoned")
+        .insert(webview_id, (url, bytes));
+}
+
+pub fn clear_bimp_flash_document_source(webview_id: WebViewId) {
+    BIMP_FLASH_DOCUMENT_SOURCES
+        .lock()
+        .expect("Bimp flash document source registry poisoned")
+        .remove(&webview_id);
+}
+
+pub fn get_bimp_flash_document_source(webview_id: WebViewId) -> Option<(ServoUrl, Vec<u8>)> {
+    BIMP_FLASH_DOCUMENT_SOURCES
+        .lock()
+        .expect("Bimp flash document source registry poisoned")
+        .get(&webview_id)
+        .cloned()
 }
 
 pub fn bimp_flash_should_skip_resource_destination(destination: request::Destination) -> bool {

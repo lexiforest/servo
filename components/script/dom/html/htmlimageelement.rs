@@ -359,7 +359,6 @@ impl HTMLImageElement {
     fn fetch_image(&self, img_url: &ServoUrl, cx: &mut js::context::JSContext) {
         let window = self.owner_window();
         if is_bimp_flash_webview(window.webview_id()) {
-            self.process_image_response(ImageResponse::FailedToLoadOrDecode, cx);
             return;
         }
 

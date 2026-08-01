@@ -27,7 +27,7 @@ half = { workspace = true }
 itertools = { workspace = true }
 log = { workspace = true }
 num-traits = { workspace = true }
-paint_api = { workspace = true }
+paint_api = { workspace = true, features = ["rendering"] }
 parking_lot = { workspace = true }
 pixels = { workspace = true }
 rustc-hash = { workspace = true }

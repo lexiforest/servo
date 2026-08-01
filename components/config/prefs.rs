@@ -508,6 +508,8 @@ pub struct Preferences {
     pub bimp_js_engine_array_constructor_source: String,
     /// Whether Servo's internal WebDriver helper functions are exposed on Window.
     pub bimp_webdriver_helpers_enabled: bool,
+    /// Whether Servo is embedded in Bimp's flash runtime.
+    pub bimp_flash_runtime_enabled: bool,
     /// Whether or not the viewport meta tag is enabled.
     pub viewport_meta_enabled: bool,
     pub log_filter: String,
@@ -758,6 +760,7 @@ impl Preferences {
             bimp_js_engine_to_fixed_range_error_message: String::new(),
             bimp_js_engine_array_constructor_source: String::new(),
             bimp_webdriver_helpers_enabled: false,
+            bimp_flash_runtime_enabled: false,
             viewport_meta_enabled: false,
             expose_servointernals_globally: false,
         }

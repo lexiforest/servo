@@ -185,7 +185,6 @@ impl HTMLVideoElement {
         // network activity as possible.
         let window = self.owner_window();
         if is_bimp_flash_webview(window.webview_id()) {
-            self.process_image_response(ImageResponse::FailedToLoadOrDecode, cx);
             return;
         }
         let image_cache = window.image_cache();

@@ -86,6 +86,9 @@ pub struct Paint {
     /// a single [`RenderingContext`].
     painters: Vec<Rc<RefCell<Painter>>>,
 
+    /// Whether this Servo instance is running without a compositor/render target.
+    skip_rendering: bool,
+
     /// A [`PaintProxy`] which can be used to allow other parts of Servo to communicate
     /// with this [`Paint`].
     pub(crate) paint_proxy: PaintProxy,
@@ -169,6 +172,7 @@ impl Paint {
             state.paint_proxy.clone(),
             PaintMessage::CollectMemoryReport,
         );
+        let skip_rendering = pref!(bimp_flash_runtime_enabled);
 
         let webrender_external_image_id_manager = WebRenderExternalImageIdManager::default();
         let painter_surfman_details_map = PainterSurfmanDetailsMap::default();
@@ -203,6 +207,7 @@ impl Paint {
 
         Rc::new(RefCell::new(Paint {
             painters: Default::default(),
+            skip_rendering,
             paint_proxy: state.paint_proxy,
             event_loop_waker: state.event_loop_waker,
             shutdown_state: state.shutdown_state,
@@ -227,6 +232,10 @@ impl Paint {
         &mut self,
         rendering_context: Rc<dyn RenderingContext>,
     ) -> PainterId {
+        if self.skip_rendering {
+            return PainterId::next();
+        }
+
         if let Some(painter_id) = self.painters.iter().find_map(|painter| {
             let painter = painter.borrow();
             if Rc::ptr_eq(&painter.rendering_context, &rendering_context) {
@@ -561,6 +570,10 @@ impl Paint {
     }
 
     pub fn remove_webview(&mut self, webview_id: WebViewId) {
+        if self.skip_rendering {
+            return;
+        }
+
         let painter_id = webview_id.into();
 
         {
@@ -656,16 +669,28 @@ impl Paint {
     }
 
     pub fn add_webview(&self, webview: Box<dyn WebViewTrait>, viewport_details: ViewportDetails) {
+        if self.skip_rendering {
+            return;
+        }
+
         self.painter_mut(webview.id().into())
             .add_webview(webview, viewport_details);
     }
 
     pub fn show_webview(&self, webview_id: WebViewId) -> Result<(), UnknownWebView> {
+        if self.skip_rendering {
+            return Ok(());
+        }
+
         self.painter_mut(webview_id.into())
             .set_webview_hidden(webview_id, false)
     }
 
     pub fn hide_webview(&self, webview_id: WebViewId) -> Result<(), UnknownWebView> {
+        if self.skip_rendering {
+            return Ok(());
+        }
+
         self.painter_mut(webview_id.into())
             .set_webview_hidden(webview_id, true)
     }
@@ -678,12 +703,18 @@ impl Paint {
         if self.shutdown_state() != ShutdownState::NotShuttingDown {
             return;
         }
+        if self.skip_rendering {
+            return;
+        }
         self.painter_mut(webview_id.into())
             .set_hidpi_scale_factor(webview_id, new_scale_factor);
     }
 
     pub fn resize_rendering_context(&self, webview_id: WebViewId, new_size: PhysicalSize<u32>) {
         if self.shutdown_state() != ShutdownState::NotShuttingDown {
+            return;
+        }
+        if self.skip_rendering {
             return;
         }
         self.painter_mut(webview_id.into())
@@ -702,16 +733,27 @@ impl Paint {
         if self.shutdown_state() != ShutdownState::NotShuttingDown {
             return;
         }
+        if self.skip_rendering {
+            return;
+        }
         self.painter_mut(webview_id.into())
             .set_page_zoom(webview_id, new_zoom);
     }
 
     pub fn page_zoom(&self, webview_id: WebViewId) -> f32 {
+        if self.skip_rendering {
+            return 1.0;
+        }
+
         self.painter(webview_id.into()).page_zoom(webview_id)
     }
 
     /// Render the WebRender scene to the active `RenderingContext`.
     pub fn render(&self, webview_id: WebViewId) {
+        if self.skip_rendering {
+            return;
+        }
+
         self.painter_mut(webview_id.into())
             .render(&self.time_profiler_chan);
     }

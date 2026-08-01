@@ -4,6 +4,7 @@
 
 //! The interface to the `paint` crate, which helps to break dependency cycles.
 
+#[cfg(feature = "rendering")]
 use std::collections::HashMap;
 use std::fmt::{Debug, Error, Formatter};
 
@@ -19,6 +20,7 @@ use servo_base::id::{PainterId, PipelineId, WebViewId};
 use smallvec::SmallVec;
 use strum::IntoStaticStr;
 use style_traits::CSSPixel;
+#[cfg(feature = "rendering")]
 use surfman::{Adapter, Connection};
 use webrender_api::{DocumentId, FontVariation};
 
@@ -27,7 +29,9 @@ pub mod largest_contentful_paint_candidate;
 pub mod rendering_context;
 pub mod viewport_description;
 
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+#[cfg(feature = "rendering")]
+use std::sync::Mutex;
 
 use bitflags::bitflags;
 use display_list::PaintDisplayListInfo;
@@ -538,15 +542,18 @@ impl CrossProcessPaintApi {
     }
 }
 
+#[cfg(feature = "rendering")]
 #[derive(Clone)]
 pub struct PainterSurfmanDetails {
     pub connection: Connection,
     pub adapter: Adapter,
 }
 
+#[cfg(feature = "rendering")]
 #[derive(Clone, Default)]
 pub struct PainterSurfmanDetailsMap(Arc<Mutex<HashMap<PainterId, PainterSurfmanDetails>>>);
 
+#[cfg(feature = "rendering")]
 impl PainterSurfmanDetailsMap {
     pub fn get(&self, painter_id: PainterId) -> Option<PainterSurfmanDetails> {
         let map = self.0.lock().expect("poisoned");
