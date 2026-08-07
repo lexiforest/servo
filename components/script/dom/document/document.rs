@@ -152,7 +152,7 @@ use crate::dom::eventtarget::EventTarget;
 use crate::dom::execcommand::basecommand::{CommandName, DefaultSingleLineContainerName};
 use crate::dom::execcommand::execcommands::DocumentExecCommandSupport;
 use crate::dom::focusevent::FocusEvent;
-use crate::dom::global_scope_script_execution::{ErrorReporting, RethrowErrors};
+use crate::dom::globalscope::script_execution::{ErrorReporting, RethrowErrors};
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::hashchangeevent::HashChangeEvent;
 use crate::dom::history::History;
@@ -212,7 +212,7 @@ use crate::image_animation::ImageAnimationManager;
 use crate::mime::{APPLICATION, CHARSET};
 use crate::navigation::navigate;
 use crate::network_listener::{FetchResponseListener, NetworkListener};
-use crate::realms::enter_realm;
+use crate::realms::enter_auto_realm;
 use crate::script_module::ScriptFetchOptions;
 use crate::script_runtime::CanGc;
 use crate::script_thread::{ScriptThread, SharedRwLocks};
@@ -2302,7 +2302,7 @@ impl Document {
     }
 
     /// Step 9 of <https://html.spec.whatwg.org/multipage/#the-end>
-    fn queue_document_completion(&self, cx: &mut JSContext) {
+    fn queue_document_completion(&self, _cx: &mut JSContext) {
         self.loader.borrow_mut().inhibit_events();
 
         // The rest will ever run only once per document.
@@ -4749,10 +4749,10 @@ impl Document {
 }})();"#
         );
 
-        let _realm = enter_realm(self);
         let global = self.window.upcast::<GlobalScope>();
+        let mut realm = enter_auto_realm(cx, global);
         let script = global.create_a_classic_script(
-            cx,
+            &mut realm,
             Cow::Owned(source),
             self.url.borrow().clone(),
             ScriptFetchOptions::default_classic_script(),
@@ -4761,7 +4761,7 @@ impl Document {
             1,
             false,
         );
-        let _ = global.run_a_classic_script(cx, script, RethrowErrors::No);
+        let _ = global.run_a_classic_script(&mut realm, script, RethrowErrors::No);
     }
 
     /// Returns a policy value that should be used for fetches initiated by this document.

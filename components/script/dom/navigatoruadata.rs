@@ -5,20 +5,21 @@
 use std::rc::Rc;
 
 use dom_struct::dom_struct;
+use js::realm::CurrentRealm;
 use js::rust::MutableHandleValue;
+use script_bindings::script_runtime::temp_cx;
+use script_bindings::reflector::{Reflector, reflect_dom_object};
 use servo_config::pref;
 
 use crate::dom::bindings::codegen::Bindings::NavigatorUADataBinding::{
     NavigatorUABrandVersion, NavigatorUADataMethods, UADataValues,
 };
-use crate::dom::bindings::reflector::{Reflector, reflect_dom_object};
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::bindings::utils::to_frozen_array;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::promise::Promise;
-use crate::realms::{AlreadyInRealm, InRealm};
-use crate::script_runtime::{CanGc, JSContext};
+use crate::script_runtime::CanGc;
 
 #[dom_struct]
 pub(crate) struct NavigatorUAData {
@@ -38,8 +39,11 @@ impl NavigatorUAData {
 }
 
 impl NavigatorUADataMethods<crate::DomTypeHolder> for NavigatorUAData {
-    fn Brands(&self, cx: JSContext, retval: MutableHandleValue) {
-        to_frozen_array(&ua_brands(), cx, retval, CanGc::deprecated_note());
+    #[expect(unsafe_code, reason = "generated any getter does not provide a JS context")]
+    fn Brands(&self, retval: MutableHandleValue) {
+        // The generated `any` getter does not pass a context yet.
+        let mut cx = unsafe { temp_cx() };
+        to_frozen_array(&mut cx, &ua_brands(), retval);
     }
 
     fn Mobile(&self) -> bool {
@@ -50,12 +54,12 @@ impl NavigatorUADataMethods<crate::DomTypeHolder> for NavigatorUAData {
         DOMString::from(pref!(bimp_js_ua_platform))
     }
 
+    #[expect(unsafe_code, reason = "generated promise method does not provide a JS context")]
     fn GetHighEntropyValues(&self, _hints: Vec<DOMString>) -> Rc<Promise> {
-        let in_realm_proof = AlreadyInRealm::assert::<crate::DomTypeHolder>();
-        let promise = Promise::new_in_current_realm(
-            InRealm::Already(&in_realm_proof),
-            CanGc::deprecated_note(),
-        );
+        // The generated promise method does not pass a context yet.
+        let mut cx = unsafe { temp_cx() };
+        let mut realm = CurrentRealm::assert(&mut cx);
+        let promise = Promise::new_in_realm(&mut realm);
         let values = UADataValues {
             brands: ua_brands(),
             fullVersionList: ua_full_version_list(),
@@ -68,7 +72,7 @@ impl NavigatorUADataMethods<crate::DomTypeHolder> for NavigatorUAData {
             uaFullVersion: DOMString::from(pref!(bimp_js_ua_full_version)),
             fullVersion: DOMString::from(pref!(bimp_js_ua_full_version)),
         };
-        promise.resolve_native(&values, CanGc::deprecated_note());
+        promise.resolve_native(&mut realm, &values);
         promise
     }
 }

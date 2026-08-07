@@ -358,7 +358,7 @@ impl Range {
     }
 
     fn client_rects_for_node(node: &Node) -> Vec<Rect<Au, CSSPixel>> {
-        let mut rects: Vec<Rect<Au, CSSPixel>> = node.border_boxes().collect();
+        let mut rects: Vec<Rect<Au, CSSPixel>> = node.border_boxes();
         if rects.is_empty() && (node.border_box().is_some() || fill_empty_element_client_rects()) {
             rects.push(node.border_box().unwrap_or_default());
         }
@@ -1283,7 +1283,9 @@ impl RangeMethods<crate::DomTypeHolder> for Range {
         // Step 3. If all rectangles in list have zero width or height, return the first rectangle in list.
         // Step 4. Otherwise, return a DOMRect object describing the smallest rectangle that includes all
         // of the rectangles in list of which the height or width is not zero.
-        let bounding_rect = list.fold(euclid::Rect::zero(), |acc, rect| acc.union(&rect));
+        let bounding_rect = list
+            .into_iter()
+            .fold(euclid::Rect::zero(), |acc, rect| acc.union(&rect));
         let (x, y, width, height) = apply_domrect_persona(
             bounding_rect.origin.x.to_f64_px(),
             bounding_rect.origin.y.to_f64_px(),

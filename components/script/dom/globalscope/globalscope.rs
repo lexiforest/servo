@@ -918,6 +918,7 @@ impl GlobalScope {
         new_registration
     }
 
+    #[expect(dead_code)]
     pub(crate) fn active_serviceworker_registration(
         &self,
     ) -> Option<DomRoot<ServiceWorkerRegistration>> {
@@ -2440,7 +2441,7 @@ impl GlobalScope {
         self.module_map.borrow().get(request).cloned()
     }
 
-    #[expect(unsafe_code)]
+    #[expect(dead_code, unsafe_code)]
     pub(crate) fn get_cx() -> SafeJSContext {
         let cx = Runtime::get()
             .expect("Can't obtain context after runtime shutdown")

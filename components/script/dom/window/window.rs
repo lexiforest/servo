@@ -2551,6 +2551,7 @@ impl Window {
 
     /// Prepares to tick animations and then does a reflow which also advances the
     /// layout animation clock.
+    #[expect(dead_code)]
     pub(crate) fn advance_animation_clock(&self, delta: TimeDuration) {
         self.Document()
             .advance_animation_timeline_for_testing(delta);

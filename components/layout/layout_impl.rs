@@ -77,7 +77,7 @@ use style::values::computed::font::GenericFontFamily;
 use style::values::computed::{CSSPixelLength, FontSize, Length, NonNegativeLength};
 use style::values::specified::font::{KeywordInfo, QueryFontMetricsFlags};
 use style::{Zero, driver};
-use style_traits::{CSSPixel, SpeculativePainter};
+use style_traits::{CSSPixel, DevicePixel as StyleDevicePixel, SpeculativePainter};
 use stylo_atoms::Atom;
 use url::Url;
 use webrender_api::ExternalScrollId;
@@ -1605,8 +1605,8 @@ impl LayoutThread {
 }
 
 fn persona_screen_size_for_media_queries(
-    fallback_size: Size2D<f32, CSSPixel>,
-) -> Size2D<f32, CSSPixel> {
+    fallback_size: Size2D<f32, StyleDevicePixel>,
+) -> Size2D<f32, StyleDevicePixel> {
     let width = pref!(bimp_js_screen_width);
     let height = pref!(bimp_js_screen_height);
     Size2D::new(

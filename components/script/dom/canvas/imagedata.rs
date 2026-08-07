@@ -199,7 +199,7 @@ impl ImageData {
         )
     }
 
-    #[expect(unsafe_code)]
+    #[expect(dead_code, unsafe_code)]
     pub(crate) fn get_snapshot(&self) -> Snapshot {
         Snapshot::from_vec(
             self.get_size(),

@@ -110,6 +110,7 @@ impl Promise {
         Promise::new_with_js_promise(cx, obj.handle())
     }
 
+    #[expect(dead_code)]
     pub(crate) fn duplicate(&self, cx: &mut JSContext) -> Rc<Promise> {
         Promise::new_with_js_promise(cx, self.reflector().get_jsobject())
     }
@@ -242,7 +243,7 @@ impl Promise {
         matches!(state, PromiseState::Rejected | PromiseState::Fulfilled)
     }
 
-    #[expect(unsafe_code)]
+    #[expect(dead_code, unsafe_code)]
     pub(crate) fn is_rejected(&self) -> bool {
         let state = unsafe { GetPromiseState(self.promise_obj()) };
         matches!(state, PromiseState::Rejected)

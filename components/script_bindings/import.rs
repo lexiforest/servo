@@ -12,7 +12,6 @@ pub(crate) mod base {
         ConversionBehavior, ConversionResult, FromJSValConvertible, ToJSValConvertible,
     };
     pub(crate) use js::error::throw_type_error;
-    pub(crate) use js::gc::RootedVec;
     pub(crate) use js::jsapi::{
         HandleValue as RawHandleValue, HandleValueArray, Heap, IsCallable, JSObject, Value,
     };

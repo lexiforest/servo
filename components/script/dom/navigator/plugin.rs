@@ -4,9 +4,10 @@
 
 use dom_struct::dom_struct;
 use js::context::NoGC;
-use script_bindings::reflector::{DomGlobal, Reflector, reflect_dom_object};
+use script_bindings::reflector::{Reflector, reflect_dom_object};
 
 use crate::dom::bindings::codegen::Bindings::PluginBinding::PluginMethods;
+use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::DomRoot;
 use crate::dom::bindings::str::DOMString;
 use crate::dom::globalscope::GlobalScope;
