@@ -9,6 +9,7 @@ use dom_struct::dom_struct;
 use js::context::JSContext;
 use js::realm::CurrentRealm;
 use js::rust::HandleObject;
+use net_traits::is_bimp_webrtc_disabled;
 use rustc_hash::FxHashMap;
 use script_bindings::cell::DomRefCell;
 use script_bindings::reflector::reflect_dom_object_with_proto_and_cx;
@@ -511,6 +512,9 @@ impl RTCPeerConnectionMethods<crate::DomTypeHolder> for RTCPeerConnection {
         proto: Option<HandleObject>,
         config: &RTCConfiguration,
     ) -> Fallible<DomRoot<RTCPeerConnection>> {
+        if is_bimp_webrtc_disabled(window.webview_id()) {
+            return Err(Error::NotSupported(None));
+        }
         Ok(RTCPeerConnection::new(cx, window, proto, config))
     }
 

@@ -46,8 +46,9 @@ pub use net_traits::CookieSource;
 pub use net_traits::{
     BimpWebViewMode, bimp_network_config_for_webview, clear_bimp_flash_document_source,
     get_bimp_flash_document_source, is_bimp_flash_webview, is_bimp_font_requests_disabled,
-    is_bimp_graphics_contexts_disabled, is_bimp_media_requests_disabled, remove_bimp_flash_webview,
-    set_bimp_flash_webview, set_bimp_network_profile, set_bimp_webview_mode,
+    is_bimp_graphics_contexts_disabled, is_bimp_media_requests_disabled,
+    is_bimp_webrtc_disabled, remove_bimp_flash_webview, set_bimp_flash_webview,
+    set_bimp_network_profile, set_bimp_webview_mode,
 };
 // This API should probably not be exposed in this way. Instead there should be a fully
 // fleshed out public domains API if we want to expose it.

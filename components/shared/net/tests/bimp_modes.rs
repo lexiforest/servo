@@ -1,7 +1,7 @@
 use net_traits::request::Destination;
 use net_traits::{
     BimpWebViewMode, bimp_mode_blocks_resource_destination, bimp_mode_disables_graphics_contexts,
-    bimp_mode_disables_media, bimp_mode_disables_paint,
+    bimp_mode_disables_media, bimp_mode_disables_paint, bimp_mode_disables_webrtc,
 };
 
 #[test]
@@ -82,7 +82,9 @@ fn rendering_media_and_graphics_policies_match_the_mode_contract() {
     for mode in [BimpWebViewMode::Nano, BimpWebViewMode::Flash] {
         assert!(bimp_mode_disables_media(mode));
         assert!(bimp_mode_disables_graphics_contexts(mode));
+        assert!(bimp_mode_disables_webrtc(mode));
     }
     assert!(!bimp_mode_disables_media(BimpWebViewMode::Full));
     assert!(!bimp_mode_disables_graphics_contexts(BimpWebViewMode::Full));
+    assert!(!bimp_mode_disables_webrtc(BimpWebViewMode::Full));
 }

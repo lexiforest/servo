@@ -1238,10 +1238,10 @@ fn create_constellation(
         #[cfg(not(feature = "webxr"))]
         webxr_registry: None,
         #[cfg(feature = "rendering")]
-        webgl_threads: if pref!(bimp_flash_runtime_enabled) {
-            None
-        } else {
+        webgl_threads: if pref!(bimp_webgl_backend_enabled) {
             Some(paint.webgl_threads())
+        } else {
+            None
         },
         #[cfg(not(feature = "rendering"))]
         webgl_threads: None,

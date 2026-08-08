@@ -114,6 +114,10 @@ pub fn bimp_mode_disables_graphics_contexts(mode: BimpWebViewMode) -> bool {
     matches!(mode, BimpWebViewMode::Nano | BimpWebViewMode::Flash)
 }
 
+pub fn bimp_mode_disables_webrtc(mode: BimpWebViewMode) -> bool {
+    matches!(mode, BimpWebViewMode::Nano | BimpWebViewMode::Flash)
+}
+
 /// Whether this WebView must avoid media fetches and playback.
 pub fn is_bimp_media_requests_disabled(webview_id: WebViewId) -> bool {
     bimp_mode_disables_media(bimp_webview_mode(webview_id))
@@ -122,6 +126,11 @@ pub fn is_bimp_media_requests_disabled(webview_id: WebViewId) -> bool {
 /// Whether this WebView must reject WebGL and WebGPU context creation.
 pub fn is_bimp_graphics_contexts_disabled(webview_id: WebViewId) -> bool {
     bimp_mode_disables_graphics_contexts(bimp_webview_mode(webview_id))
+}
+
+/// Whether this WebView must reject WebRTC peer connections.
+pub fn is_bimp_webrtc_disabled(webview_id: WebViewId) -> bool {
+    bimp_mode_disables_webrtc(bimp_webview_mode(webview_id))
 }
 
 pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {

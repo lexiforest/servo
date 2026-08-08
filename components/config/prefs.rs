@@ -512,6 +512,8 @@ pub struct Preferences {
     pub bimp_webdriver_helpers_enabled: bool,
     /// Whether Servo is embedded in Bimp's flash runtime.
     pub bimp_flash_runtime_enabled: bool,
+    /// Whether the WebGL backend thread is started. Only the Full mode starts it.
+    pub bimp_webgl_backend_enabled: bool,
     /// Whether or not the viewport meta tag is enabled.
     pub viewport_meta_enabled: bool,
     pub log_filter: String,
@@ -764,6 +766,7 @@ impl Preferences {
             bimp_js_engine_array_constructor_source: String::new(),
             bimp_webdriver_helpers_enabled: false,
             bimp_flash_runtime_enabled: false,
+            bimp_webgl_backend_enabled: false,
             viewport_meta_enabled: false,
             expose_servointernals_globally: false,
         }
