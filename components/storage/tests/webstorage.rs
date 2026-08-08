@@ -21,7 +21,7 @@ impl WebStorageTest {
     pub(crate) fn new() -> Self {
         let tmp_dir = tempfile::tempdir().unwrap();
         let config_dir = tmp_dir.path().to_path_buf();
-        let mem_profiler_chan = profile_mem::Profiler::create();
+        let mem_profiler_chan = profile_mem::Profiler::create(true);
         let threads = storage::new_storage_threads(mem_profiler_chan, Some(config_dir), false);
 
         Self {
@@ -31,7 +31,7 @@ impl WebStorageTest {
     }
 
     pub(crate) fn new_in_memory() -> Self {
-        let mem_profiler_chan = profile_mem::Profiler::create();
+        let mem_profiler_chan = profile_mem::Profiler::create(true);
         let threads = storage::new_storage_threads(mem_profiler_chan, None, false);
 
         Self {
@@ -43,7 +43,7 @@ impl WebStorageTest {
     pub(crate) fn restart(mut self) -> Self {
         let tmp_dir = self.tmp_dir.take();
         let config_dir = tmp_dir.as_ref().map(|d| d.path().to_path_buf());
-        let mem_profiler_chan = profile_mem::Profiler::create();
+        let mem_profiler_chan = profile_mem::Profiler::create(true);
         let threads = storage::new_storage_threads(mem_profiler_chan, config_dir, false);
 
         Self {

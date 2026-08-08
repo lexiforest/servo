@@ -67,7 +67,7 @@ where
 /// Front-end representation of the profiler used to communicate with the
 /// profiler.
 #[derive(Clone, Debug, Deserialize, Serialize, MallocSizeOf)]
-pub struct ProfilerChan(pub GenericSender<ProfilerMsg>);
+pub struct ProfilerChan(pub Option<GenericSender<ProfilerMsg>>);
 
 /// A handle that encompasses a registration with the memory profiler.
 /// The registration is tied to the lifetime of this type; the memory
@@ -87,9 +87,12 @@ impl Drop for ProfilerRegistration {
 impl ProfilerChan {
     /// Send `msg` on this `IpcSender`.
     ///
-    /// Warns if the send fails.
+    /// Warns if the send fails, and silently drops the message when the memory profiler is
+    /// disabled.
     pub fn send(&self, msg: ProfilerMsg) {
-        if let Err(e) = self.0.send(msg) {
+        if let Some(sender) = &self.0 &&
+            let Err(e) = sender.send(msg)
+        {
             warn!("Error communicating with the memory profiler thread: {}", e);
         }
     }

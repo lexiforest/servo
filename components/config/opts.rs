@@ -31,6 +31,10 @@ pub struct Opts {
     /// visualizing the traces as a timeline.
     pub time_profiler_trace_path: Option<String>,
 
+    /// Whether the memory profiler thread is started. Disabling it makes the memory profiler
+    /// channel a no-op, so memory reports are never collected.
+    pub mem_profiling: bool,
+
     /// True to exit on thread failure instead of displaying about:failure.
     pub hard_fail: bool,
 
@@ -245,6 +249,7 @@ impl Default for Opts {
         Self {
             time_profiling: None,
             time_profiler_trace_path: None,
+            mem_profiling: true,
             hard_fail: true,
             multiprocess: false,
             force_ipc: false,

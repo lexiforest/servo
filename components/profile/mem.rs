@@ -29,7 +29,12 @@ pub struct Profiler {
 }
 
 impl Profiler {
-    pub fn create() -> ProfilerChan {
+    pub fn create(enabled: bool) -> ProfilerChan {
+        if !enabled {
+            // No-op channel so all memory profiler sends are dropped silently.
+            return ProfilerChan(None);
+        }
+
         let (chan, port) = generic_channel::channel().unwrap();
 
         if servo_allocator::is_tracking_unmeasured() && std::env::var(LOG_FILE_VAR).is_err() {
@@ -46,7 +51,7 @@ impl Profiler {
             })
             .expect("Thread spawning failed");
 
-        let mem_profiler_chan = ProfilerChan(chan);
+        let mem_profiler_chan = ProfilerChan(Some(chan));
 
         // Register the system memory reporter, which will run on its own thread. It never needs to
         // be unregistered, because as long as the memory profiler is running the system memory

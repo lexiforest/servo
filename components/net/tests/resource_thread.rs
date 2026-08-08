@@ -27,7 +27,7 @@ fn test_exit() {
     let (resource_thread, _private_resource_thread) = new_core_resource_thread(
         None,
         ProfilerChan(Some(tx)),
-        MemProfilerChan(mtx),
+        MemProfilerChan(Some(mtx)),
         create_generic_embedder_proxy(),
         None,
         CACertificates::Default,
