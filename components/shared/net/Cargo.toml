@@ -15,6 +15,10 @@ path = "lib.rs"
 test = false
 doctest = false
 
+[[test]]
+name = "bimp_modes"
+path = "tests/bimp_modes.rs"
+
 [features]
 test-util = []
 

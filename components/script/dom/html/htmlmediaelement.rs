@@ -24,7 +24,7 @@ use media::{GLPlayerMsg, GLPlayerMsgForward, WindowGLContext};
 use net_traits::request::{Destination, RequestId};
 use net_traits::{
     CoreResourceThread, FetchMetadata, FilteredMetadata, NetworkError, ResourceFetchTiming,
-    is_bimp_flash_webview,
+    is_bimp_media_requests_disabled,
 };
 use paint_api::{CrossProcessPaintApi, ImageUpdate, SerializableImageData};
 use pixels::RasterImage;
@@ -1515,7 +1515,7 @@ impl HTMLMediaElement {
 
     /// <https://html.spec.whatwg.org/multipage/#concept-media-load-resource>
     fn resource_fetch_algorithm(&self, resource: Resource) {
-        if is_bimp_flash_webview(self.owner_document().webview_id()) {
+        if is_bimp_media_requests_disabled(self.owner_document().webview_id()) {
             self.resource_selection_algorithm_failure_steps();
             return;
         }

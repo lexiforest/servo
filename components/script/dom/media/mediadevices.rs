@@ -8,24 +8,17 @@ use dom_struct::dom_struct;
 use js::context::JSContext;
 use js::realm::CurrentRealm;
 use script_bindings::reflector::reflect_dom_object;
-use servo_media::streams::MediaStreamType;
-use servo_media::streams::capture::{Constrain, ConstrainRange, MediaTrackConstraintSet};
 
 use crate::dom::bindings::codegen::Bindings::MediaDeviceInfoBinding::MediaDeviceKind;
 use crate::dom::bindings::codegen::Bindings::MediaDevicesBinding::{
     MediaDevicesMethods, MediaStreamConstraints,
 };
-use crate::dom::bindings::codegen::UnionTypes::{
-    BooleanOrMediaTrackConstraints, ClampedUnsignedLongOrConstrainULongRange as ConstrainULong,
-    DoubleOrConstrainDoubleRange as ConstrainDouble,
-};
 use crate::dom::bindings::reflector::DomGlobal;
 use crate::dom::bindings::root::DomRoot;
+use crate::dom::domexception::{DOMErrorName, DOMException};
 use crate::dom::eventtarget::EventTarget;
 use crate::dom::globalscope::GlobalScope;
 use crate::dom::media::mediadeviceinfo::MediaDeviceInfo;
-use crate::dom::media::mediastream::MediaStream;
-use crate::dom::media::mediastreamtrack::MediaStreamTrack;
 use crate::dom::promise::Promise;
 use crate::script_runtime::CanGc;
 
@@ -54,22 +47,11 @@ impl MediaDevicesMethods<crate::DomTypeHolder> for MediaDevices {
         constraints: &MediaStreamConstraints,
     ) -> Rc<Promise> {
         let p = Promise::new_in_realm(cx);
-        let media = servo_media::ServoMedia::get();
-        let stream = MediaStream::new(cx, &self.global());
-        if let Some(constraints) = convert_constraints(&constraints.audio) &&
-            let Some(audio) = media.create_audioinput_stream(constraints)
-        {
-            let track = MediaStreamTrack::new(cx, &self.global(), audio, MediaStreamType::Audio);
-            stream.add_track(&track);
-        }
-        if let Some(constraints) = convert_constraints(&constraints.video) &&
-            let Some(video) = media.create_videoinput_stream(constraints)
-        {
-            let track = MediaStreamTrack::new(cx, &self.global(), video, MediaStreamType::Video);
-            stream.add_track(&track);
-        }
-
-        p.resolve_native(cx, &stream);
+        let _ = constraints;
+        // Bimp exposes persona-backed device metadata but never opens a host
+        // microphone or camera. No mode opts into real capture implicitly.
+        let exception = DOMException::new(cx, &self.global(), DOMErrorName::NotAllowedError);
+        p.reject_native(cx, &exception);
         p
     }
 
@@ -139,53 +121,5 @@ fn push_persona_media_devices(
         devices.push(MediaDeviceInfo::new(
             cx, global, &device_id, kind, "", &group_id,
         ));
-    }
-}
-
-fn convert_constraints(js: &BooleanOrMediaTrackConstraints) -> Option<MediaTrackConstraintSet> {
-    match js {
-        BooleanOrMediaTrackConstraints::Boolean(false) => None,
-        BooleanOrMediaTrackConstraints::Boolean(true) => Some(Default::default()),
-        BooleanOrMediaTrackConstraints::MediaTrackConstraints(c) => Some(MediaTrackConstraintSet {
-            height: c.parent.height.as_ref().and_then(convert_culong),
-            width: c.parent.width.as_ref().and_then(convert_culong),
-            aspect: c.parent.aspectRatio.as_ref().and_then(convert_cdouble),
-            frame_rate: c.parent.frameRate.as_ref().and_then(convert_cdouble),
-            sample_rate: c.parent.sampleRate.as_ref().and_then(convert_culong),
-        }),
-    }
-}
-
-fn convert_culong(js: &ConstrainULong) -> Option<Constrain<u32>> {
-    match js {
-        ConstrainULong::ClampedUnsignedLong(val) => Some(Constrain::Value(*val)),
-        ConstrainULong::ConstrainULongRange(range) => {
-            if range.parent.min.is_some() || range.parent.max.is_some() {
-                Some(Constrain::Range(ConstrainRange {
-                    min: range.parent.min,
-                    max: range.parent.max,
-                    ideal: range.ideal,
-                }))
-            } else {
-                range.exact.map(Constrain::Value)
-            }
-        },
-    }
-}
-
-fn convert_cdouble(js: &ConstrainDouble) -> Option<Constrain<f64>> {
-    match js {
-        ConstrainDouble::Double(val) => Some(Constrain::Value(**val)),
-        ConstrainDouble::ConstrainDoubleRange(range) => {
-            if range.parent.min.is_some() || range.parent.max.is_some() {
-                Some(Constrain::Range(ConstrainRange {
-                    min: range.parent.min.map(|x| *x),
-                    max: range.parent.max.map(|x| *x),
-                    ideal: range.ideal.map(|x| *x),
-                }))
-            } else {
-                range.exact.map(|exact| Constrain::Value(*exact))
-            }
-        },
     }
 }

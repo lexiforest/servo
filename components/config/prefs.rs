@@ -382,6 +382,8 @@ pub struct Preferences {
     pub user_agent: String,
     /// Bimp persona override for the network `Accept-Language` header.
     pub bimp_network_accept_language: String,
+    /// Bimp impersonate fingerprint profile used for HTTP(S) transport.
+    pub bimp_network_impersonation_profile: String,
     /// Bimp persona override for `navigator.appVersion`.
     pub bimp_js_app_version: String,
     /// Bimp persona override for `navigator.platform`.
@@ -697,6 +699,7 @@ impl Preferences {
             webgl_testing_context_creation_error: false,
             user_agent: String::new(),
             bimp_network_accept_language: String::new(),
+            bimp_network_impersonation_profile: String::new(),
             bimp_js_app_version: String::new(),
             bimp_js_platform: String::new(),
             bimp_js_language: String::new(),

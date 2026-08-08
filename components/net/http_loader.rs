@@ -62,7 +62,7 @@ use profile_traits::trace_span;
 use rustc_hash::FxHashMap;
 use servo_base::cross_process_instant::CrossProcessInstant;
 use servo_base::generic_channel::GenericSharedMemory;
-use servo_base::id::{BrowsingContextId, HistoryStateId, PipelineId};
+use servo_base::id::{BrowsingContextId, HistoryStateId, PipelineId, WebViewId};
 use servo_url::{ImmutableOrigin, ServoUrl};
 use tokio::sync::mpsc::{
     Receiver as TokioReceiver, Sender as TokioSender, UnboundedReceiver, UnboundedSender, channel,
@@ -516,6 +516,7 @@ async fn obtain_response(
     context: &FetchContext,
     fetch_terminated: UnboundedSender<bool>,
     browsing_context_id: Option<BrowsingContextId>,
+    target_webview_id: Option<WebViewId>,
 ) -> Result<(HyperResponse<Decoder>, Option<ChromeToDevtoolsControlMsg>), NetworkError> {
     let mut headers = request_headers.clone();
 
@@ -546,7 +547,7 @@ async fn obtain_response(
             method.clone(),
             headers.clone(),
             request_body,
-            context.user_agent.clone(),
+            target_webview_id,
         )
         .await?;
         let send_end = CrossProcessInstant::now();
@@ -2236,6 +2237,7 @@ async fn http_network_fetch(
                 context,
                 fetch_terminated_sender,
                 browsing_context_id,
+                request.target_webview_id,
             );
 
             // This will only get the headers, the body is read later

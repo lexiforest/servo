@@ -18,7 +18,7 @@ use net_traits::image_cache::{
 use net_traits::request::{Destination, Initiator, ParserMetadata, RequestBuilder, RequestId};
 use net_traits::{
     FetchMetadata, FetchResponseMsg, NetworkError, ReferrerPolicy, ResourceFetchTiming,
-    bimp_flash_should_skip_resource_destination, is_bimp_flash_webview,
+    bimp_mode_blocks_resource_destination, bimp_webview_mode, is_bimp_flash_webview,
 };
 use pixels::PixelFormat;
 use script_bindings::cell::DomRefCell;
@@ -910,9 +910,8 @@ impl HTMLLinkElement {
         };
         // Step 5. Set options's destination to destination.
         options.destination = destination;
-        if is_bimp_flash_webview(self.owner_window().webview_id()) &&
-            bimp_flash_should_skip_resource_destination(destination)
-        {
+        let webview_id = self.owner_window().webview_id();
+        if bimp_mode_blocks_resource_destination(bimp_webview_mode(webview_id), destination) {
             return;
         }
         // Steps for https://html.spec.whatwg.org/multipage/#preload

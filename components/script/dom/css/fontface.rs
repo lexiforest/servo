@@ -10,7 +10,7 @@ use dom_struct::dom_struct;
 use fonts::{FontContext, FontContextWebFontMethods, FontTemplate, LowercaseFontFamilyName};
 use js::context::JSContext;
 use js::rust::HandleObject;
-use net_traits::is_bimp_flash_webview;
+use net_traits::is_bimp_font_requests_disabled;
 use script_bindings::cell::DomRefCell;
 use script_bindings::reflector::{Reflector, reflect_dom_object_with_proto};
 use style::error_reporting::ParseErrorReporter;
@@ -646,7 +646,7 @@ impl FontFaceMethods<crate::DomTypeHolder> for FontFace {
         let global = self.global();
         if global
             .webview_id()
-            .is_some_and(is_bimp_flash_webview)
+            .is_some_and(is_bimp_font_requests_disabled)
         {
             self.status.set(FontFaceLoadStatus::Loaded);
             self.font_status_promise.resolve_native(cx, self);

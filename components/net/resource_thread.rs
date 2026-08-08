@@ -855,7 +855,7 @@ impl CoreResourceManager {
             };
         let mut sender =
             BimpFlashDocumentRecorder::new(sender, document_source_webview_id, url.clone());
-        if bimp_flash_blocks_request(&request) {
+        if bimp_resource_policy_blocks_request(&request) {
             debug!(
                 "Bimp flash mode blocked visual resource {} ({:?})",
                 url, request.destination
@@ -1025,9 +1025,13 @@ impl CoreResourceManager {
     }
 }
 
-fn bimp_flash_blocks_request(request: &net_traits::request::Request) -> bool {
-    request
-        .target_webview_id
-        .is_some_and(net_traits::is_bimp_flash_webview)
-        && matches!(request.destination, Destination::Font | Destination::Image)
+fn bimp_resource_policy_blocks_request(request: &net_traits::request::Request) -> bool {
+    let Some(webview_id) = request.target_webview_id else {
+        return false;
+    };
+
+    net_traits::bimp_mode_blocks_resource_destination(
+        net_traits::bimp_webview_mode(webview_id),
+        request.destination,
+    )
 }

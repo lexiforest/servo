@@ -4,7 +4,7 @@
 
 #![deny(unsafe_code)]
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{self, Debug, Display};
 use std::sync::{LazyLock, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
@@ -39,31 +39,161 @@ use uuid::Uuid;
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct CookieOperationId(pub u64);
 
-static BIMP_FLASH_WEBVIEWS: LazyLock<Mutex<HashSet<WebViewId>>> =
-    LazyLock::new(|| Mutex::new(HashSet::new()));
+static BIMP_WEBVIEW_MODES: LazyLock<Mutex<HashMap<WebViewId, BimpWebViewMode>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+static BIMP_NETWORK_CONFIGS: LazyLock<Mutex<HashMap<WebViewId, BimpNetworkConfig>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 static BIMP_FLASH_DOCUMENT_SOURCES: LazyLock<Mutex<HashMap<WebViewId, (ServoUrl, Vec<u8>)>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
-pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {
-    let mut webviews = BIMP_FLASH_WEBVIEWS
+
+/// The resource and browser-surface contract for a Bimp WebView.
+///
+/// This is intentionally independent from the rendering backend. Flash and
+/// Full use the same renderer; their differences are expressed below as
+/// resource and high-cost-surface policy.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BimpWebViewMode {
+    Nano,
+    Flash,
+    Full,
+}
+
+/// Stores the resolved Bimp mode for a WebView before its first navigation.
+pub fn set_bimp_webview_mode(webview_id: WebViewId, mode: BimpWebViewMode) {
+    BIMP_WEBVIEW_MODES
         .lock()
-        .expect("Bimp flash webview registry poisoned");
+        .expect("Bimp webview mode registry poisoned")
+        .insert(webview_id, mode);
+}
+
+/// Returns the resolved Bimp mode, defaulting unregistered WebViews to Full.
+pub fn bimp_webview_mode(webview_id: WebViewId) -> BimpWebViewMode {
+    BIMP_WEBVIEW_MODES
+        .lock()
+        .expect("Bimp webview mode registry poisoned")
+        .get(&webview_id)
+        .copied()
+        .unwrap_or(BimpWebViewMode::Full)
+}
+
+/// Whether this resource destination is blocked by a mode's network contract.
+pub fn bimp_mode_blocks_resource_destination(
+    mode: BimpWebViewMode,
+    destination: request::Destination,
+) -> bool {
+    match mode {
+        BimpWebViewMode::Nano => matches!(
+            destination,
+            request::Destination::Audio
+                | request::Destination::Font
+                | request::Destination::Image
+                | request::Destination::Manifest
+                | request::Destination::Track
+                | request::Destination::Video
+        ),
+        BimpWebViewMode::Flash => matches!(
+            destination,
+            request::Destination::Audio
+                | request::Destination::Font
+                | request::Destination::Track
+                | request::Destination::Video
+        ),
+        BimpWebViewMode::Full => false,
+    }
+}
+
+pub fn bimp_mode_disables_paint(mode: BimpWebViewMode) -> bool {
+    mode == BimpWebViewMode::Nano
+}
+
+pub fn bimp_mode_disables_media(mode: BimpWebViewMode) -> bool {
+    matches!(mode, BimpWebViewMode::Nano | BimpWebViewMode::Flash)
+}
+
+pub fn bimp_mode_disables_graphics_contexts(mode: BimpWebViewMode) -> bool {
+    matches!(mode, BimpWebViewMode::Nano | BimpWebViewMode::Flash)
+}
+
+/// Whether this WebView must avoid media fetches and playback.
+pub fn is_bimp_media_requests_disabled(webview_id: WebViewId) -> bool {
+    bimp_mode_disables_media(bimp_webview_mode(webview_id))
+}
+
+/// Whether this WebView must reject WebGL and WebGPU context creation.
+pub fn is_bimp_graphics_contexts_disabled(webview_id: WebViewId) -> bool {
+    bimp_mode_disables_graphics_contexts(bimp_webview_mode(webview_id))
+}
+
+pub fn set_bimp_flash_webview(webview_id: WebViewId, enabled: bool) {
     if enabled {
-        webviews.insert(webview_id);
+        set_bimp_webview_mode(webview_id, BimpWebViewMode::Nano);
     } else {
-        webviews.remove(&webview_id);
+        BIMP_WEBVIEW_MODES
+            .lock()
+            .expect("Bimp webview mode registry poisoned")
+            .remove(&webview_id);
     }
 }
 
 pub fn remove_bimp_flash_webview(webview_id: WebViewId) {
     set_bimp_flash_webview(webview_id, false);
+    BIMP_NETWORK_CONFIGS
+        .lock()
+        .expect("Bimp network configuration registry poisoned")
+        .remove(&webview_id);
     clear_bimp_flash_document_source(webview_id);
 }
 
 pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
-    BIMP_FLASH_WEBVIEWS
+    bimp_mode_disables_paint(bimp_webview_mode(webview_id))
+}
+
+pub fn is_bimp_font_requests_disabled(webview_id: WebViewId) -> bool {
+    bimp_mode_blocks_resource_destination(bimp_webview_mode(webview_id), request::Destination::Font)
+}
+
+/// Bimp transport configuration associated with one WebView.
+#[derive(Clone, Debug)]
+pub struct BimpNetworkConfig {
+    /// Resolved libcurl-impersonate browser profile.
+    pub impersonation_profile: String,
+    /// Optional HTTP or SOCKS5 proxy URL.
+    pub proxy_url: Option<String>,
+    /// Optional connection timeout for `bimp-net`, in milliseconds.
+    pub connect_timeout_ms: Option<u64>,
+    /// Optional overall request timeout for `bimp-net`, in milliseconds.
+    pub request_timeout_ms: Option<u64>,
+}
+
+/// Associates a Bimp WebView with its resolved transport configuration.
+pub fn set_bimp_network_profile(
+    webview_id: WebViewId,
+    impersonation_profile: String,
+    proxy_url: Option<String>,
+    connect_timeout_ms: Option<u64>,
+    request_timeout_ms: Option<u64>,
+) {
+    BIMP_NETWORK_CONFIGS
         .lock()
-        .expect("Bimp flash webview registry poisoned")
-        .contains(&webview_id)
+        .expect("Bimp network configuration registry poisoned")
+        .insert(
+            webview_id,
+            BimpNetworkConfig {
+                impersonation_profile,
+                proxy_url,
+                connect_timeout_ms,
+                request_timeout_ms,
+            },
+        );
+}
+
+/// Returns the Bimp transport configuration for a WebView.
+pub fn bimp_network_config_for_webview(webview_id: WebViewId) -> Option<BimpNetworkConfig> {
+    BIMP_NETWORK_CONFIGS
+        .lock()
+        .expect("Bimp network configuration registry poisoned")
+        .get(&webview_id)
+        .cloned()
 }
 
 pub fn set_bimp_flash_document_source(webview_id: WebViewId, url: ServoUrl, bytes: Vec<u8>) {
@@ -86,18 +216,6 @@ pub fn get_bimp_flash_document_source(webview_id: WebViewId) -> Option<(ServoUrl
         .expect("Bimp flash document source registry poisoned")
         .get(&webview_id)
         .cloned()
-}
-
-pub fn bimp_flash_should_skip_resource_destination(destination: request::Destination) -> bool {
-    matches!(
-        destination,
-        request::Destination::Audio |
-            request::Destination::Font |
-            request::Destination::Image |
-            request::Destination::Manifest |
-            request::Destination::Track |
-            request::Destination::Video
-    )
 }
 
 use crate::fetch::headers::determine_nosniff;
@@ -1374,33 +1492,3 @@ pub fn set_default_accept_language(headers: &mut HeaderMap) {
 }
 
 pub static PRIVILEGED_SECRET: LazyLock<u32> = LazyLock::new(|| rng().next_u32());
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::request::Destination;
-
-    #[test]
-    fn bimp_flash_skips_only_heavy_resource_destinations() {
-        for destination in [
-            Destination::Audio,
-            Destination::Font,
-            Destination::Image,
-            Destination::Manifest,
-            Destination::Track,
-            Destination::Video,
-        ] {
-            assert!(bimp_flash_should_skip_resource_destination(destination));
-        }
-
-        for destination in [
-            Destination::Document,
-            Destination::Script,
-            Destination::Style,
-            Destination::Xslt,
-            Destination::None,
-        ] {
-            assert!(!bimp_flash_should_skip_resource_destination(destination));
-        }
-    }
-}
