@@ -119,8 +119,9 @@ pub struct Paint {
     /// up of all Surfman `Surface`s.
     pub(crate) busy_webgl_contexts_map: WebGLContextBusyMap,
 
-    /// The [`WebGLThreads`] for this renderer.
-    webgl_threads: WebGLThreads,
+    /// The [`WebGLThreads`] for this renderer, when the mode enables the WebGL
+    /// backend. Modes that disable the backend never spawn the WebGL thread.
+    webgl_threads: Option<WebGLThreads>,
 
     /// A [`JoinHandle`] for joining the WebGL thread once the exit message is sent.
     webgl_join_handle: Cell<Option<JoinHandle<()>>>,
@@ -142,6 +143,26 @@ pub struct Paint {
     /// An map of external images shared between all `WebGpuExternalImages`.
     #[cfg(feature = "webgpu")]
     webgpu_image_map: std::cell::OnceCell<WebGpuExternalImageMap>,
+}
+
+/// A [`webxr_api::LayerGrandManagerAPI`] that never creates WebXR layers. Used
+/// when the WebGL backend is disabled, so WebXR still has a registry object
+/// without a WebGL thread to back it.
+#[cfg(feature = "webxr")]
+struct NoopLayerGrandManager;
+
+#[cfg(feature = "webxr")]
+impl webxr_api::LayerGrandManagerAPI<webxr::SurfmanGL> for NoopLayerGrandManager {
+    fn create_layer_manager(
+        &self,
+        _: webxr_api::LayerManagerFactory<webxr::SurfmanGL>,
+    ) -> Result<webxr_api::LayerManager, webxr_api::Error> {
+        Err(webxr_api::Error::NoMatchingDevice)
+    }
+
+    fn clone_layer_grand_manager(&self) -> webxr_api::LayerGrandManager<webxr::SurfmanGL> {
+        webxr_api::LayerGrandManager::new(NoopLayerGrandManager)
+    }
 }
 
 /// Why we need to be repainted. This is used for debugging.
@@ -176,34 +197,63 @@ impl Paint {
 
         let webrender_external_image_id_manager = WebRenderExternalImageIdManager::default();
         let painter_surfman_details_map = PainterSurfmanDetailsMap::default();
-        let WebGLComm {
-            webgl_threads,
-            swap_chains,
-            busy_webgl_context_map,
-            #[cfg(feature = "webxr")]
-            webxr_layer_grand_manager,
-            join_handle: webgl_join_handle,
-        } = WebGLComm::new(
-            state.paint_proxy.cross_process_paint_api.clone(),
-            webrender_external_image_id_manager.clone(),
-            painter_surfman_details_map.clone(),
-        );
-
-        // Create the WebXR main thread
+        let webgl_backend_enabled = pref!(bimp_webgl_backend_enabled);
         #[cfg(feature = "webxr")]
-        let webxr_main_thread = {
-            use servo_config::pref;
+        let mut webxr_main_thread;
+        let (webgl_threads, swap_chains, busy_webgl_context_map, webgl_join_handle) =
+            if webgl_backend_enabled {
+                let WebGLComm {
+                    webgl_threads,
+                    swap_chains,
+                    busy_webgl_context_map,
+                    #[cfg(feature = "webxr")]
+                    webxr_layer_grand_manager,
+                    join_handle,
+                } = WebGLComm::new(
+                    state.paint_proxy.cross_process_paint_api.clone(),
+                    webrender_external_image_id_manager.clone(),
+                    painter_surfman_details_map.clone(),
+                );
+                #[cfg(feature = "webxr")]
+                {
+                    use servo_config::pref;
 
-            let mut webxr_main_thread = webxr::MainThreadRegistry::new(
-                state.event_loop_waker.clone(),
-                webxr_layer_grand_manager,
-            )
-            .expect("Failed to create WebXR device registry");
-            if pref!(dom_webxr_enabled) {
-                state.webxr_registry.register(&mut webxr_main_thread);
-            }
-            webxr_main_thread
-        };
+                    webxr_main_thread = webxr::MainThreadRegistry::new(
+                        state.event_loop_waker.clone(),
+                        webxr_layer_grand_manager,
+                    )
+                    .expect("Failed to create WebXR device registry");
+                    if pref!(dom_webxr_enabled) {
+                        state.webxr_registry.register(&mut webxr_main_thread);
+                    }
+                }
+                (
+                    Some(webgl_threads),
+                    swap_chains,
+                    busy_webgl_context_map,
+                    Some(join_handle),
+                )
+            } else {
+                #[cfg(feature = "webxr")]
+                {
+                    use servo_config::pref;
+
+                    webxr_main_thread = webxr::MainThreadRegistry::new(
+                        state.event_loop_waker.clone(),
+                        webxr_api::LayerGrandManager::new(NoopLayerGrandManager),
+                    )
+                    .expect("Failed to create WebXR device registry");
+                    if pref!(dom_webxr_enabled) {
+                        state.webxr_registry.register(&mut webxr_main_thread);
+                    }
+                }
+                (
+                    None,
+                    SwapChains::new(),
+                    WebGLContextBusyMap::default(),
+                    None,
+                )
+            };
 
         Rc::new(RefCell::new(Paint {
             painters: Default::default(),
@@ -215,7 +265,7 @@ impl Paint {
             embedder_to_constellation_sender: state.embedder_to_constellation_sender.clone(),
             webrender_external_image_id_manager,
             webgl_threads,
-            webgl_join_handle: Cell::new(Some(webgl_join_handle)),
+            webgl_join_handle: Cell::new(webgl_join_handle),
             swap_chains,
             time_profiler_chan: state.time_profiler_chan,
             _mem_profiler_registration: registration,
@@ -272,7 +322,9 @@ impl Paint {
         // devices after `clear_painter_resources` is called.
         self.painter_surfman_details_map.remove(painter_id);
 
-        if !self.webgl_threads.clear_painter_resources(painter_id) {
+        if let Some(webgl_threads) = self.webgl_threads.as_ref()
+            && !webgl_threads.clear_painter_resources(painter_id)
+        {
             warn!("Could not clear {painter_id:?} resources in WebGLThread");
         }
 
@@ -316,7 +368,7 @@ impl Paint {
         self.painter(painter_id).rendering_context.size2d()
     }
 
-    pub fn webgl_threads(&self) -> WebGLThreads {
+    pub fn webgl_threads(&self) -> Option<WebGLThreads> {
         self.webgl_threads.clone()
     }
 
@@ -357,7 +409,9 @@ impl Paint {
         // another thread from finishing (i.e. SetFrameTree).
         while self.paint_receiver.try_recv().is_ok() {}
 
-        self.webgl_threads.exit();
+        if let Some(webgl_threads) = self.webgl_threads.as_ref() {
+            webgl_threads.exit();
+        }
         if let Some(webgl_join_handle) = self.webgl_join_handle.take() &&
             webgl_join_handle.join().is_err()
         {

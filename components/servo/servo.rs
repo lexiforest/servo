@@ -1238,11 +1238,7 @@ fn create_constellation(
         #[cfg(not(feature = "webxr"))]
         webxr_registry: None,
         #[cfg(feature = "rendering")]
-        webgl_threads: if pref!(bimp_webgl_backend_enabled) {
-            Some(paint.webgl_threads())
-        } else {
-            None
-        },
+        webgl_threads: paint.webgl_threads(),
         #[cfg(not(feature = "rendering"))]
         webgl_threads: None,
         webrender_external_image_id_manager: paint.webrender_external_image_id_manager(),
