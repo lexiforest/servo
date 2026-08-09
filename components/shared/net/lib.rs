@@ -157,6 +157,14 @@ pub fn is_bimp_flash_webview(webview_id: WebViewId) -> bool {
     bimp_mode_disables_paint(bimp_webview_mode(webview_id))
 }
 
+/// Whether this WebView has an explicitly registered Bimp runtime mode.
+pub fn is_bimp_webview(webview_id: WebViewId) -> bool {
+    BIMP_WEBVIEW_MODES
+        .lock()
+        .expect("Bimp webview mode registry poisoned")
+        .contains_key(&webview_id)
+}
+
 pub fn is_bimp_font_requests_disabled(webview_id: WebViewId) -> bool {
     bimp_mode_blocks_resource_destination(bimp_webview_mode(webview_id), request::Destination::Font)
 }

@@ -847,7 +847,7 @@ impl CoreResourceManager {
             if request.destination == Destination::Document &&
                 request
                     .target_webview_id
-                    .is_some_and(net_traits::is_bimp_flash_webview)
+                    .is_some_and(net_traits::is_bimp_webview)
             {
                 request.target_webview_id
             } else {
