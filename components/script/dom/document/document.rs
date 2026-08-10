@@ -3906,7 +3906,7 @@ impl Document {
             return;
         };
 
-        let source = format!(
+        let mut source = format!(
             r#"(function() {{
     var nativeApply = Reflect.apply;
     var nativeDefineProperty = Object.defineProperty;
@@ -4103,6 +4103,7 @@ impl Document {
         return fn;
     }}
     function bimpInstallDeviceCheckSurface() {{
+        var notificationPermission = String(bimpPersona.js && bimpPersona.js.notification_permission || "default");
         if (typeof globalThis.crossOriginIsolated == "undefined") {{
             nativeDefineProperty(globalThis, "crossOriginIsolated", {{
                 value: false,
@@ -4113,7 +4114,7 @@ impl Document {
         if (!globalThis.Notification) {{
             var NotificationShim = bimpIllegalConstructor("Notification");
             nativeDefineProperty(NotificationShim, "permission", {{
-                value: "default",
+                value: notificationPermission,
                 enumerable: true,
                 configurable: true
             }});
@@ -4128,6 +4129,13 @@ impl Document {
                 configurable: true
             }});
         }}
+        try {{
+            nativeDefineProperty(globalThis.Notification, "permission", {{
+                value: notificationPermission,
+                enumerable: true,
+                configurable: true
+            }});
+        }} catch (_) {{}}
         if (!globalThis.scheduler) {{
             var scheduler = {{
                 postTask: bimpDefineChromeFunction(function(callback) {{
@@ -4226,7 +4234,7 @@ impl Document {
             bimpSpeechVoiceNames :
             ["Samantha", "Alex"];
         var voices = names.map(function(name, index) {{
-            return bimpSpeechVoice(String(name), index, language);
+            return bimpSpeechVoice(name, index, language);
         }});
         var listeners = [];
         var onvoiceschanged = null;
@@ -4835,12 +4843,130 @@ impl Document {
             return Promise.resolve(manager);
         }}, configurable: true, writable: true }});
         var storage = bimpPersona.storage;
-        if (storage && navigator.storage) nativeDefineProperty(Object.getPrototypeOf(navigator.storage), "estimate", {{ value: function() {{ return Promise.resolve({{ usage: Number(storage.usage_bytes || 0), quota: storage.quota_bytes == null ? undefined : Number(storage.quota_bytes) }}); }}, configurable: true, writable: true }});
+        if (storage && globalThis.Navigator && Navigator.prototype) {{
+            var storageManager = navigator.storage || {{}};
+            nativeDefineProperty(storageManager, "estimate", {{
+                value: bimpDefineChromeFunction(function() {{
+                    return Promise.resolve({{
+                        usage: Number(storage.usage_bytes || 0),
+                        quota: storage.quota_bytes == null ? undefined : Number(storage.quota_bytes)
+                    }});
+                }}, "estimate", 0, false),
+                configurable: true,
+                writable: true
+            }});
+            nativeDefineProperty(Navigator.prototype, "storage", {{
+                get: function() {{ return storageManager; }},
+                configurable: true
+            }});
+        }}
         function installLegacyStorage(name, quotaKey) {{
             if (storage && storage[quotaKey] != null) nativeDefineProperty(globalThis, name, {{ value: {{ queryUsageAndQuota: function(success) {{ if (success) success(Number(storage.usage_bytes || 0), Number(storage[quotaKey])); }}, requestQuota: function(bytes, success) {{ if (success) success(Math.min(Number(bytes), Number(storage[quotaKey]))); }} }}, configurable: true }});
         }}
         installLegacyStorage("webkitTemporaryStorage", "legacy_temporary_quota_bytes");
         installLegacyStorage("webkitPersistentStorage", "legacy_persistent_quota_bytes");
+    }}
+    function bimpInstallNavigatorMocks() {{
+        if (!globalThis.Navigator || !Navigator.prototype) return;
+        var jsConfig = bimpPersona.js || {{}};
+        var networkInformationConstructor = globalThis.NetworkInformation;
+        if (!networkInformationConstructor) {{
+            networkInformationConstructor = bimpIllegalConstructor("NetworkInformation");
+            if (globalThis.EventTarget && EventTarget.prototype) {{
+                try {{ Object.setPrototypeOf(networkInformationConstructor.prototype, EventTarget.prototype); }} catch (_) {{}}
+            }}
+            nativeDefineProperty(globalThis, "NetworkInformation", {{
+                value: networkInformationConstructor,
+                writable: true,
+                configurable: true
+            }});
+        }}
+        var networkInformationPrototype = networkInformationConstructor.prototype;
+        if (networkInformationPrototype) {{
+            nativeDefineProperty(networkInformationPrototype, "rtt", {{ get: function() {{ return Number(jsConfig.connection_rtt_ms); }}, configurable: true }});
+            nativeDefineProperty(networkInformationPrototype, "downlink", {{ get: function() {{ return Number(jsConfig.connection_downlink_mbps); }}, configurable: true }});
+            nativeDefineProperty(networkInformationPrototype, "effectiveType", {{ get: function() {{ return String(jsConfig.connection_effective_type || "4g"); }}, configurable: true }});
+            nativeDefineProperty(networkInformationPrototype, "saveData", {{ get: function() {{ return !!jsConfig.connection_save_data; }}, configurable: true }});
+            nativeDefineProperty(networkInformationPrototype, "onchange", {{ get: function() {{ return null; }}, set: function() {{}}, configurable: true }});
+            if (typeof Symbol == "function" && Symbol.toStringTag) nativeDefineProperty(networkInformationPrototype, Symbol.toStringTag, {{ value: "NetworkInformation", configurable: true }});
+            var networkInformation = globalThis.EventTarget ? new EventTarget() : {{}};
+            try {{ Object.setPrototypeOf(networkInformation, networkInformationPrototype); }} catch (_) {{}}
+            nativeDefineProperty(Navigator.prototype, "connection", {{ get: function() {{ return networkInformation; }}, configurable: true }});
+        }}
+        if (navigator.permissions && typeof navigator.permissions.query == "function") {{
+            var nativePermissionsQuery = navigator.permissions.query;
+            nativeDefineProperty(Object.getPrototypeOf(navigator.permissions), "query", {{
+                value: bimpDefineChromeFunction(function(descriptor) {{
+                    if (descriptor && descriptor.name === "notifications") {{
+                        var status = globalThis.EventTarget ? new EventTarget() : {{}};
+                        if (globalThis.PermissionStatus && PermissionStatus.prototype) {{
+                            try {{ Object.setPrototypeOf(status, PermissionStatus.prototype); }} catch (_) {{}}
+                        }}
+                        nativeDefineProperty(status, "state", {{ value: String(jsConfig.notification_permission || "default"), enumerable: true, configurable: true }});
+                        nativeDefineProperty(status, "onchange", {{ value: null, writable: true, configurable: true }});
+                        return Promise.resolve(status);
+                    }}
+                    return nativeApply(nativePermissionsQuery, this, arguments);
+                }}, "query", 1, false),
+                writable: true,
+                configurable: true
+            }});
+        }}
+        nativeDefineProperty(Navigator.prototype, "doNotTrack", {{
+            get: function() {{ return jsConfig.do_not_track == null ? null : String(jsConfig.do_not_track); }},
+            configurable: true
+        }});
+        if (jsConfig.expose_global_privacy_control === true) {{
+            nativeDefineProperty(Navigator.prototype, "globalPrivacyControl", {{
+                get: function() {{ return !!jsConfig.global_privacy_control; }},
+                configurable: true
+            }});
+        }} else {{
+            try {{ delete Navigator.prototype.globalPrivacyControl; }} catch (_) {{}}
+        }}
+        var features = bimpPersona.features || {{}};
+        if (features.bluetooth === true && jsConfig.bluetooth_enabled !== false && !("bluetooth" in navigator)) {{
+            var bluetooth = {{
+                getAvailability: bimpDefineChromeFunction(function() {{
+                    return Promise.resolve(!!jsConfig.bluetooth_available);
+                }}, "getAvailability", 0, false),
+                requestDevice: bimpDefineChromeFunction(function() {{
+                    return Promise.reject(new DOMException("User cancelled the requestDevice() chooser.", "NotFoundError"));
+                }}, "requestDevice", 0, false)
+            }};
+            nativeDefineProperty(Navigator.prototype, "bluetooth", {{
+                get: function() {{ return bluetooth; }},
+                configurable: true
+            }});
+        }}
+        var mediaConfig = bimpPersona.media || {{}};
+        if (jsConfig.media_devices_enabled !== false && !("mediaDevices" in navigator)) {{
+            var devices = [];
+            function appendDevices(kind, prefix, count) {{
+                for (var index = 0; index < Math.max(0, Math.min(16, Number(count) || 0)); index++) {{
+                    devices.push({{
+                        deviceId: prefix + "-" + index,
+                        groupId: "group-" + index,
+                        kind: kind,
+                        label: "",
+                        toJSON: function() {{ return {{ deviceId: this.deviceId, groupId: this.groupId, kind: this.kind, label: this.label }}; }}
+                    }});
+                }}
+            }}
+            appendDevices("audioinput", "audio-input", mediaConfig.audio_inputs);
+            appendDevices("videoinput", "video-input", mediaConfig.video_inputs);
+            appendDevices("audiooutput", "audio-output", mediaConfig.audio_outputs);
+            var mediaDevices = {{
+                enumerateDevices: bimpDefineChromeFunction(function() {{ return Promise.resolve(devices.slice()); }}, "enumerateDevices", 0, false),
+                addEventListener: function() {{}},
+                removeEventListener: function() {{}},
+                dispatchEvent: function() {{ return true; }}
+            }};
+            nativeDefineProperty(Navigator.prototype, "mediaDevices", {{
+                get: function() {{ return mediaDevices; }},
+                configurable: true
+            }});
+        }}
     }}
     function bimpInstallGeolocationAndWebRtc() {{
         var geo = bimpPersona.geo;
@@ -4891,6 +5017,7 @@ impl Document {
     bimpInstallPlugins();
     bimpInstallWebGlProfile(globalThis.WebGLRenderingContext && WebGLRenderingContext.prototype, bimpPersona.graphics && bimpPersona.graphics.webgl1);
     bimpInstallWebGlProfile(globalThis.WebGL2RenderingContext && WebGL2RenderingContext.prototype, bimpPersona.graphics && bimpPersona.graphics.webgl2);
+    bimpInstallNavigatorMocks();
     bimpInstallBatteryAndStorage();
     bimpInstallGeolocationAndWebRtc();
     bimpInstallCssMedia();
@@ -4904,6 +5031,12 @@ impl Document {
     if (bimpPersona.svg && bimpPersona.svg.expose_geometry_methods === false && globalThis.SVGElement) ["getBBox", "getComputedTextLength", "getExtentOfChar", "getSubStringLength"].forEach(function(name) {{ try {{ delete SVGElement.prototype[name]; }} catch (_) {{}} }});
 }})();"#
         );
+        if let Ok(diagnostic_source) = std::env::var("BIMP_DIAGNOSTIC_INIT_SCRIPT") {
+            if !diagnostic_source.trim().is_empty() {
+                source.push_str("\n//# sourceURL=bimp-diagnostic-init.js\n");
+                source.push_str(&diagnostic_source);
+            }
+        }
 
         let global = self.window.upcast::<GlobalScope>();
         let mut realm = enter_auto_realm(cx, global);
