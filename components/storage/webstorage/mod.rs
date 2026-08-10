@@ -54,6 +54,10 @@ impl WebStorageThreadFactory for GenericSender<WebStorageThreadMsg> {
         thread::Builder::new()
             .name("WebStorageManager".to_owned())
             .spawn(move || {
+                let Ok(first_message) = port.recv() else {
+                    return;
+                };
+                let _ = chan2.send(first_message);
                 mem_profiler_chan.run_with_memory_reporting(
                     || WebStorageManager::new(port, config_dir).start(),
                     reporter_name,

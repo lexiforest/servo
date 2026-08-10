@@ -51,6 +51,10 @@ impl IndexedDBThreadFactory for GenericSender<IndexedDBThreadMsg> {
         thread::Builder::new()
             .name("IndexedDBManager".to_owned())
             .spawn(move || {
+                let Ok(first_message) = port.recv() else {
+                    return;
+                };
+                let _ = manager_sender.send(first_message);
                 mem_profiler_chan.run_with_memory_reporting(
                     || IndexedDBManager::new(port, manager_sender).start(),
                     reporter_name,

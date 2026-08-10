@@ -24,10 +24,14 @@ use js::conversions::jsstr_to_string;
 use js::gc::StackGCVector;
 use js::glue::{
     CreateJobQueue, DeleteJobQueue, DispatchablePointer, JS_GetReservedSlot, JobQueueTraps,
-    RUST_js_GetErrorMessage, RegisterScriptEnvironmentPreparer,
-    RunScriptEnvironmentPreparerClosure, SetBuildId, StreamConsumerConsumeChunk,
-    StreamConsumerNoteResponseURLs, StreamConsumerStreamEnd, StreamConsumerStreamError,
+    RUST_js_GetErrorMessage, RunScriptEnvironmentPreparerClosure, SetBuildId,
+    StreamConsumerConsumeChunk, StreamConsumerNoteResponseURLs, StreamConsumerStreamEnd,
+    StreamConsumerStreamError,
 };
+#[cfg(not(target_os = "windows"))]
+use js::glue::RustEnvironmentPreparer;
+use js::jsapi::JS::InitDispatchsToEventLoop;
+use js::jsapi::js::{ScriptEnvironmentPreparer, SetScriptEnvironmentPreparer};
 use js::jsapi::{
     AsmJSOption, BuildIdCharVector, CompilationType, Dispatchable_MaybeShuttingDown, GCDescription,
     GCOptions, GCProgress, GCReason, GetPromiseUserInputEventHandlingState, Handle as RawHandle,
@@ -49,7 +53,7 @@ use js::rust::wrappers2::{
     JS_InitReadPrincipalsCallback, JS_NewObject, JS_SetGCCallback, JS_SetGCParameter,
     JS_SetGlobalJitCompilerOption, JS_SetOffthreadIonCompilationEnabled, JS_SetSecurityCallbacks,
     SetDOMCallbacks, SetGCSliceCallback, SetJobQueue, SetPreserveWrapperCallbacks,
-    SetPromiseRejectionTrackerCallback, SetUpEventLoopDispatch,
+    SetPromiseRejectionTrackerCallback,
 };
 use js::rust::{
     Handle, HandleObject as RustHandleObject, HandleValue, IntoHandle, JSEngine, JSEngineHandle,
@@ -733,8 +737,22 @@ pub(crate) struct Runtime {
     pub(crate) microtask_queue: Rc<MicrotaskQueue>,
     #[ignore_malloc_size_of = "Type from mozjs"]
     job_queue: *mut JobQueue,
+    #[cfg(not(target_os = "windows"))]
+    #[no_trace]
+    #[ignore_malloc_size_of = "Owned mozjs callback object"]
+    script_environment_preparer: Box<RustEnvironmentPreparer>,
     /// The data that is set on the SpiderMonkey runtime callbacks as a pointer.
     runtime_callback_data: Box<RuntimeCallbackData>,
+}
+
+#[cfg(not(target_os = "windows"))]
+#[expect(unsafe_code)]
+unsafe extern "C" {
+    #[link_name = "_ZN23RustEnvironmentPreparerC1EPFvN2JS6HandleIP8JSObjectEERN2js25ScriptEnvironmentPreparer7ClosureEE"]
+    fn construct_script_environment_preparer(
+        this: *mut RustEnvironmentPreparer,
+        hook: js::glue::InvokeScriptPreparerHook,
+    );
 }
 
 impl Runtime {
@@ -862,11 +880,26 @@ impl Runtime {
                 .is_ok()
         }
 
+        // SpiderMonkey passes an rvalue reference to a one-pointer UniquePtr here. Move that
+        // pointer into mozjs_sys's owned wrapper so DispatchableRun can consume it later. Calling
+        // mozjs_sys::SetUpEventLoopDispatch instead would allocate EventLoopCallbackData without
+        // providing a matching teardown API, leaking one allocation for every script runtime.
+        unsafe extern "C" fn dispatch_to_event_loop_without_leaking(
+            data: *mut c_void,
+            dispatchable: *mut u8,
+        ) -> bool {
+            let dispatchable = dispatchable.cast::<u64>();
+            let owned_pointer = unsafe { ptr::replace(dispatchable, 0) };
+            let wrapper = Box::new(DispatchablePointer { ptr: owned_pointer });
+            unsafe { dispatch_to_event_loop(data, Box::into_raw(wrapper)) }
+        }
+
         if have_event_loop_sender {
             unsafe {
-                SetUpEventLoopDispatch(
-                    cx,
-                    Some(dispatch_to_event_loop),
+                InitDispatchsToEventLoop(
+                    cx.raw_cx(),
+                    Some(dispatch_to_event_loop_without_leaking),
+                    None,
                     runtime_callback_data as *mut c_void,
                 );
             }
@@ -899,11 +932,6 @@ impl Runtime {
                 ptr::null_mut(),
             );
 
-            RegisterScriptEnvironmentPreparer(
-                cx.raw_cx(),
-                Some(invoke_script_environment_preparer),
-            );
-
             EnsureModuleHooksInitialized(runtime.rt());
 
             let cx = runtime.cx();
@@ -926,6 +954,35 @@ impl Runtime {
                 cx,
                 JSJitCompilerOption::JSJITCOMPILER_ION_ENABLE,
                 pref!(js_ion_enabled) as u32,
+            );
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        let script_environment_preparer = unsafe {
+            let mut preparer = Box::<RustEnvironmentPreparer>::new_uninit();
+            construct_script_environment_preparer(
+                preparer.as_mut_ptr(),
+                Some(invoke_script_environment_preparer),
+            );
+            let preparer = preparer.assume_init();
+            let cx = runtime.cx();
+            SetScriptEnvironmentPreparer(
+                cx.raw_cx(),
+                (&raw const *preparer)
+                    .cast_mut()
+                    .cast::<ScriptEnvironmentPreparer>(),
+            );
+            preparer
+        };
+
+        #[cfg(target_os = "windows")]
+        unsafe {
+            // mozjs_sys does not expose an owned callback constructor with a stable C ABI on
+            // MSVC yet. Keep its registration path until that API is available upstream.
+            let cx = runtime.cx();
+            js::glue::RegisterScriptEnvironmentPreparer(
+                cx.raw_cx(),
+                Some(invoke_script_environment_preparer),
             );
         }
         cx_opts.compileOptions_.asmJSOption_ = if pref!(js_asmjs_enabled) {
@@ -1040,6 +1097,8 @@ impl Runtime {
             rt: runtime,
             microtask_queue,
             job_queue,
+            #[cfg(not(target_os = "windows"))]
+            script_environment_preparer,
             runtime_callback_data: unsafe { Box::from_raw(runtime_callback_data) },
         }
     }
@@ -1063,6 +1122,7 @@ impl Drop for Runtime {
 
         // Delete the RustJobQueue in mozjs, which will destroy our interrupt queues.
         unsafe {
+            SetScriptEnvironmentPreparer(self.rt.cx().raw_cx(), ptr::null_mut());
             DeleteJobQueue(self.job_queue);
         }
         LiveDOMReferences::destruct();

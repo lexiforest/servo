@@ -42,9 +42,13 @@ pub enum SystemFontServiceMessage {
 }
 
 #[derive(Clone, Deserialize, Serialize)]
-pub struct SystemFontServiceProxySender(pub GenericSender<SystemFontServiceMessage>);
+pub struct SystemFontServiceProxySender(pub Option<GenericSender<SystemFontServiceMessage>>);
 
 impl SystemFontServiceProxySender {
+    pub fn disabled() -> Self {
+        Self(None)
+    }
+
     pub fn to_proxy(&self) -> SystemFontServiceProxy {
         SystemFontServiceProxy {
             sender: self.0.clone(),
@@ -63,14 +67,17 @@ struct FontTemplateCacheKey {
 /// `FontContext` instances.
 #[derive(Debug, MallocSizeOf)]
 pub struct SystemFontServiceProxy {
-    sender: GenericSender<SystemFontServiceMessage>,
+    sender: Option<GenericSender<SystemFontServiceMessage>>,
     templates: RwLock<HashMap<FontTemplateCacheKey, Vec<FontTemplateRef>>>,
 }
 
 impl SystemFontServiceProxy {
     pub fn exit(&self) {
+        let Some(sender) = &self.sender else {
+            return;
+        };
         let (response_chan, response_port) = generic_channel::channel().unwrap();
-        self.sender
+        sender
             .send(SystemFontServiceMessage::Exit(response_chan))
             .expect("Couldn't send SystemFontService exit message");
         response_port
@@ -90,9 +97,13 @@ impl SystemFontServiceProxy {
         variations: Vec<FontVariation>,
         painter_id: PainterId,
     ) -> FontInstanceKey {
+        let sender = self
+            .sender
+            .as_ref()
+            .expect("system fonts are disabled for this runtime");
         let (response_chan, response_port) =
             generic_channel::channel().expect("failed to create IPC channel");
-        self.sender
+        sender
             .send(SystemFontServiceMessage::GetFontInstance(
                 painter_id,
                 identifier,
@@ -105,7 +116,7 @@ impl SystemFontServiceProxy {
 
         let instance_key = response_port.recv();
         if instance_key.is_err() {
-            let font_thread_has_closed = self.sender.send(SystemFontServiceMessage::Ping).is_err();
+            let font_thread_has_closed = sender.send(SystemFontServiceMessage::Ping).is_err();
             assert!(
                 font_thread_has_closed,
                 "Failed to receive a response from live font cache"
@@ -120,6 +131,9 @@ impl SystemFontServiceProxy {
         descriptor_to_match: Option<&FontDescriptor>,
         family_descriptor: &SingleFontFamily,
     ) -> Vec<FontTemplateRef> {
+        let Some(sender) = &self.sender else {
+            return Vec::new();
+        };
         let cache_key = FontTemplateCacheKey {
             font_descriptor: descriptor_to_match.cloned(),
             family_descriptor: family_descriptor.clone(),
@@ -135,7 +149,7 @@ impl SystemFontServiceProxy {
 
         let (response_chan, response_port) =
             generic_channel::channel().expect("failed to create IPC channel");
-        self.sender
+        sender
             .send(SystemFontServiceMessage::GetFontTemplates(
                 descriptor_to_match.cloned(),
                 family_descriptor.clone(),
@@ -144,7 +158,7 @@ impl SystemFontServiceProxy {
             .expect("failed to send message to system font service");
 
         let Ok(templates) = response_port.recv() else {
-            let font_thread_has_closed = self.sender.send(SystemFontServiceMessage::Ping).is_err();
+            let font_thread_has_closed = sender.send(SystemFontServiceMessage::Ping).is_err();
             assert!(
                 font_thread_has_closed,
                 "Failed to receive a response from live font cache"
@@ -159,9 +173,13 @@ impl SystemFontServiceProxy {
     }
 
     pub fn generate_font_key(&self, painter_id: PainterId) -> FontKey {
+        let sender = self
+            .sender
+            .as_ref()
+            .expect("font key allocation is disabled for this runtime");
         let (result_sender, result_receiver) =
             generic_channel::channel().expect("failed to create IPC channel");
-        self.sender
+        sender
             .send(SystemFontServiceMessage::GetFontKey(
                 painter_id,
                 result_sender,
@@ -173,9 +191,13 @@ impl SystemFontServiceProxy {
     }
 
     pub fn generate_font_instance_key(&self, painter_id: PainterId) -> FontInstanceKey {
+        let sender = self
+            .sender
+            .as_ref()
+            .expect("font instance key allocation is disabled for this runtime");
         let (result_sender, result_receiver) =
             generic_channel::channel().expect("failed to create IPC channel");
-        self.sender
+        sender
             .send(SystemFontServiceMessage::GetFontInstanceKey(
                 painter_id,
                 result_sender,
@@ -187,8 +209,8 @@ impl SystemFontServiceProxy {
     }
 
     pub fn prefetch_font_keys_for_painter(&self, painter_id: PainterId) {
-        let _ = self
-            .sender
-            .send(SystemFontServiceMessage::PrefetchFontKeys(painter_id));
+        if let Some(sender) = &self.sender {
+            let _ = sender.send(SystemFontServiceMessage::PrefetchFontKeys(painter_id));
+        }
     }
 }

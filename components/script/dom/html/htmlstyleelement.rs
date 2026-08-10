@@ -13,6 +13,7 @@ use net_traits::ReferrerPolicy;
 use script_bindings::cell::DomRefCell;
 use script_bindings::root::Dom;
 use servo_arc::Arc;
+use servo_config::pref;
 use style::media_queries::MediaList as StyleMediaList;
 use style::stylesheets::{Stylesheet, StylesheetInDocument, UrlExtraData};
 use stylo_atoms::Atom;
@@ -110,6 +111,11 @@ impl HTMLStyleElement {
 
         // Step 2. If element has an associated CSS style sheet, remove the CSS style sheet in question.
         self.remove_stylesheet();
+
+        // Nano deliberately exposes the DOM source without parsing or applying CSS.
+        if !pref!(bimp_style_engine_enabled) {
+            return;
+        }
 
         // Step 3. If element is not connected, then return.
         let node = self.upcast::<Node>();

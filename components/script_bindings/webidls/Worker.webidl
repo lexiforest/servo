@@ -9,7 +9,7 @@ interface mixin AbstractWorker {
 };
 
 // https://html.spec.whatwg.org/multipage/#worker
-[Exposed=(Window,Worker)]
+[Pref="bimp_persistent_web_apis_enabled", Exposed=(Window,Worker)]
 interface Worker : EventTarget {
   [Throws] constructor((TrustedScriptURL or USVString) scriptURL, optional WorkerOptions options = {});
   undefined terminate();

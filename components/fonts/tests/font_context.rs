@@ -99,7 +99,7 @@ mod font_context {
                 .expect("Thread spawning failed");
             (
                 system_font_service,
-                SystemFontServiceProxySender(sender).to_proxy(),
+                SystemFontServiceProxySender(Some(sender)).to_proxy(),
             )
         }
 

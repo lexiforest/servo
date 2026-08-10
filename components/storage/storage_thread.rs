@@ -34,11 +34,26 @@ fn new_storage_thread_group(
     StorageThreads::new(client_storage.into(), idb, web_storage)
 }
 
+fn disabled_storage_thread_group() -> StorageThreads {
+    let (client_storage, client_storage_receiver) = servo_base::generic_channel::channel().unwrap();
+    let (idb, idb_receiver) = servo_base::generic_channel::channel().unwrap();
+    let (web_storage, web_storage_receiver) = servo_base::generic_channel::channel().unwrap();
+    drop((client_storage_receiver, idb_receiver, web_storage_receiver));
+    StorageThreads::new(client_storage, idb, web_storage)
+}
+
 pub fn new_storage_threads(
     mem_profiler_chan: MemProfilerChan,
     config_dir: Option<PathBuf>,
     temporary_storage: bool,
+    disabled: bool,
 ) -> (StorageThreads, StorageThreads) {
+    if disabled {
+        return (
+            disabled_storage_thread_group(),
+            disabled_storage_thread_group(),
+        );
+    }
     let private_storage_threads = new_storage_thread_group(
         mem_profiler_chan.clone(),
         config_dir.clone(),

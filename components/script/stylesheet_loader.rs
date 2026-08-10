@@ -489,6 +489,11 @@ impl ElementStylesheetLoader<'_> {
         cors_setting: Option<CorsSettings>,
         integrity_metadata: String,
     ) {
+        // Nano has no style engine, so avoid stylesheet fetch, parser, and load-blocking state.
+        if !pref!(bimp_style_engine_enabled) {
+            return;
+        }
+
         let document = element.owner_document();
         let shadow_root = element
             .containing_shadow_root()

@@ -1003,6 +1003,12 @@ impl LayoutThread {
     fn handle_reflow(&mut self, mut reflow_request: ReflowRequest) -> Option<ReflowResult> {
         self.maybe_print_reflow_event(&reflow_request);
 
+        // Nano is a source-oriented DOM runtime. Keep Servo's layout object in place for script
+        // plumbing, but do not run Stylo, construct boxes, or build display data.
+        if !pref!(bimp_style_engine_enabled) {
+            return Some(ReflowResult::default());
+        }
+
         if self.can_skip_reflow_request_entirely(&reflow_request) {
             // We can skip layout, but we might need to update a scroll node.
             return self

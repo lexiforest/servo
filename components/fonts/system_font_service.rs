@@ -100,7 +100,7 @@ impl SystemFontService {
                     free_font_instance_keys: Default::default(),
                 };
 
-                cache.refresh_local_families();
+                cache.load_persona_families();
 
                 memory_profiler_sender.run_with_memory_reporting(
                     || cache.run(),
@@ -111,7 +111,7 @@ impl SystemFontService {
             })
             .expect("Thread spawning failed");
 
-        SystemFontServiceProxySender(sender)
+        SystemFontServiceProxySender(Some(sender))
     }
 
     fn run(&mut self) {
@@ -221,14 +221,22 @@ impl SystemFontService {
     }
 
     #[servo_tracing::instrument(skip_all)]
-    fn refresh_local_families(&mut self) {
+    /// Install only the font families declared by the active Bimp persona. This avoids the
+    /// platform-wide font enumeration (and its caches) while keeping font matching stable.
+    fn load_persona_families(&mut self) {
         self.local_families.clear();
-        for_each_available_family(|family_name| {
-            self.local_families
-                .families
-                .entry(family_name.as_str().into())
-                .or_default();
-        });
+        let configured_families = pref!(bimp_js_font_families);
+        if configured_families.is_empty() {
+            for_each_available_family(|family_name| {
+                self.local_families
+                    .families
+                    .entry(family_name.as_str().into())
+                    .or_default();
+            });
+            return;
+        }
+        // A configured Bimp persona uses layout's deterministic fallback metrics. Its family
+        // list is exposed to script separately and must not cause native font discovery.
     }
 
     #[servo_tracing::instrument(skip_all)]
@@ -237,6 +245,11 @@ impl SystemFontService {
         descriptor_to_match: Option<&FontDescriptor>,
         family: &SingleFontFamily,
     ) -> Vec<FontTemplateRef> {
+        // Bimp personas use deterministic fallback metrics in every runtime mode. Keep this
+        // lightweight service only for WebRender key allocation and web-font support.
+        if !pref!(bimp_js_font_families).is_empty() {
+            return Vec::new();
+        }
         // TODO(Issue #188): look up localized font family names if canonical name not found
         // look up canonical name
         let family_name = self.family_name_for_single_font_family(family);
@@ -337,14 +350,15 @@ impl SystemFontService {
                     GenericFontFamily::Serif => pref!(fonts_serif),
                     GenericFontFamily::SansSerif => pref!(fonts_sans_serif),
                     GenericFontFamily::Monospace => pref!(fonts_monospace),
-                    _ => String::new(),
+                    _ => pref!(fonts_default),
                 };
 
                 if !family_name.is_empty() {
                     return family_name.into();
                 }
 
-                // Otherwise ask the platform for the default family for the generic font.
+                // Bimp always supplies a fixed default persona family. Preserve Servo's
+                // platform fallback for other embedders.
                 default_system_generic_font_family(*generic)
             })
             .clone()

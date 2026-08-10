@@ -150,13 +150,13 @@ partial interface Window {
 
 // https://html.spec.whatwg.org/multipage/#dom-sessionstorage
 interface mixin WindowSessionStorage {
-  [Throws] readonly attribute Storage sessionStorage;
+  [Pref="bimp_persistent_web_apis_enabled", Throws] readonly attribute Storage sessionStorage;
 };
 Window includes WindowSessionStorage;
 
 // https://html.spec.whatwg.org/multipage/#dom-localstorage
 interface mixin WindowLocalStorage {
-  [Throws] readonly attribute Storage localStorage;
+  [Pref="bimp_persistent_web_apis_enabled", Throws] readonly attribute Storage localStorage;
 };
 Window includes WindowLocalStorage;
 

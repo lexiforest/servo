@@ -9,7 +9,6 @@ fn resource_matrix_matches_the_documented_mode_contract() {
     let always_allowed = [
         Destination::Document,
         Destination::Script,
-        Destination::Style,
         Destination::Xslt,
         Destination::None,
     ];
@@ -31,6 +30,7 @@ fn resource_matrix_matches_the_documented_mode_contract() {
         Destination::Font,
         Destination::Image,
         Destination::Manifest,
+        Destination::Style,
         Destination::Track,
         Destination::Video,
     ] {
@@ -51,7 +51,11 @@ fn resource_matrix_matches_the_documented_mode_contract() {
             destination
         ));
     }
-    for destination in [Destination::Image, Destination::Manifest] {
+    for destination in [
+        Destination::Image,
+        Destination::Manifest,
+        Destination::Style,
+    ] {
         assert!(!bimp_mode_blocks_resource_destination(
             BimpWebViewMode::Flash,
             destination
@@ -63,6 +67,7 @@ fn resource_matrix_matches_the_documented_mode_contract() {
         Destination::Font,
         Destination::Image,
         Destination::Manifest,
+        Destination::Style,
         Destination::Track,
         Destination::Video,
     ] {

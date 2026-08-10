@@ -13,7 +13,7 @@ use crate::null_paint::{InitialPaintState, Paint};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 pub use embedder_traits::*;
 use env_logger::Builder as EnvLoggerBuilder;
-use fonts::SystemFontService;
+use fonts::{SystemFontService, SystemFontServiceProxySender};
 #[cfg(all(
     not(target_os = "windows"),
     not(target_os = "ios"),
@@ -32,7 +32,7 @@ use log::{Log, Metadata, Record, debug, warn};
 #[cfg(feature = "rendering")]
 use media::{GlApi, NativeDisplay, WindowGLContext};
 use net::embedder::NetToEmbedderMsg;
-use net::image_cache::ImageCacheFactoryImpl;
+use net::image_cache::{DisabledImageCacheFactory, ImageCacheFactoryImpl};
 use net::protocols::ProtocolRegistry;
 use net::resource_thread::new_resource_threads;
 use net_traits::{ResourceThreads, exit_fetch_thread, start_fetch_thread};
@@ -903,7 +903,10 @@ impl Servo {
             Ordering::Relaxed,
         );
 
-        if !opts.multiprocess && !pref!(bimp_flash_runtime_enabled) {
+        // Document lifecycle transitions always access the ServoMedia singleton, including
+        // when Bimp's Nano mode disables media APIs. Initialize the configured backend so
+        // those transitions cannot block forever waiting on an empty OnceLock.
+        if !opts.multiprocess {
             media_platform::init();
         }
 
@@ -982,6 +985,7 @@ impl Servo {
             mem_profiler_chan.clone(),
             opts.config_dir.clone(),
             opts.temporary_storage,
+            pref!(bimp_flash_runtime_enabled),
         );
 
         create_constellation(
@@ -1000,8 +1004,6 @@ impl Servo {
             public_storage_threads.clone(),
             private_storage_threads.clone(),
         );
-
-        net::connector::prewarm_tls();
 
         if opts::get().multiprocess {
             prefs::add_observer(Box::new(constellation_proxy.clone()));
@@ -1211,13 +1213,15 @@ fn create_constellation(
 
     let privileged_urls = protocols.privileged_urls();
 
-    let system_font_service = Arc::new(
+    let system_font_service_sender = if pref!(bimp_flash_runtime_enabled) {
+        SystemFontServiceProxySender::disabled()
+    } else {
         SystemFontService::spawn(
             paint_proxy.cross_process_paint_api.clone(),
             mem_profiler_chan.clone(),
         )
-        .to_proxy(),
-    );
+    };
+    let system_font_service = Arc::new(system_font_service_sender.to_proxy());
 
     let initial_state = InitialConstellationState {
         paint_proxy,
@@ -1320,9 +1324,7 @@ pub fn run_content_process(token: String) {
 
     match unprivileged_content {
         UnprivilegedContent::ScriptEventLoop(new_event_loop_info) => {
-            if !pref!(bimp_flash_runtime_enabled) {
-                media_platform::init();
-            }
+            media_platform::init();
 
             // Start the fetch thread for this content process.
             let fetch_thread_join_handle = start_fetch_thread();
@@ -1344,12 +1346,17 @@ pub fn run_content_process(token: String) {
                 );
 
             let layout_factory = Arc::new(LayoutFactoryImpl());
+            let image_cache_factory = if pref!(bimp_flash_runtime_enabled) {
+                Arc::new(DisabledImageCacheFactory) as Arc<dyn net_traits::image_cache::ImageCacheFactory>
+            } else {
+                Arc::new(ImageCacheFactoryImpl::new(
+                    new_event_loop_info.broken_image_icon_data,
+                )) as Arc<dyn net_traits::image_cache::ImageCacheFactory>
+            };
             let script_join_handle = script::ScriptThread::create(
                 new_event_loop_info.initial_script_state,
                 layout_factory,
-                Arc::new(ImageCacheFactoryImpl::new(
-                    new_event_loop_info.broken_image_icon_data,
-                )),
+                image_cache_factory,
                 background_hang_monitor_register,
             );
 

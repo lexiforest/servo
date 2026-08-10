@@ -123,7 +123,8 @@ use keyboard_types::{Key, KeyState, Modifiers, NamedKey};
 use layout_api::{LayoutFactory, ScriptThreadFactory};
 use log::{debug, error, info, trace, warn};
 use media::WindowGLContext;
-use net::image_cache::ImageCacheFactoryImpl;
+use net::image_cache::{DisabledImageCacheFactory, ImageCacheFactoryImpl};
+use net_traits::image_cache::ImageCacheFactory;
 use net_traits::pub_domains::registered_domain_name;
 use net_traits::{self, AsyncRuntime, ResourceThreads, exit_fetch_thread, start_fetch_thread};
 use paint_api::{
@@ -506,7 +507,7 @@ pub struct Constellation<STF, SWF> {
     /// The [`ImageCacheFactory`] to use for all `ScriptThread`s when we are running in
     /// single-process mode. In multi-process mode, each process will create its own
     /// [`ImageCacheFactoryImpl`].
-    pub(crate) image_cache_factory: Arc<ImageCacheFactoryImpl>,
+    pub(crate) image_cache_factory: Arc<dyn ImageCacheFactory>,
 
     /// Pending viewport changes for browsing contexts that are not
     /// yet known to the constellation.
@@ -735,9 +736,11 @@ where
                     async_runtime: state.async_runtime,
                     event_loop_join_handles: Default::default(),
                     privileged_urls: state.privileged_urls,
-                    image_cache_factory: Arc::new(ImageCacheFactoryImpl::new(
-                        broken_image_icon_data,
-                    )),
+                    image_cache_factory: if pref!(bimp_flash_runtime_enabled) {
+                        Arc::new(DisabledImageCacheFactory)
+                    } else {
+                        Arc::new(ImageCacheFactoryImpl::new(broken_image_icon_data))
+                    },
                     pending_viewport_changes: Default::default(),
                     screenshot_readiness_requests: Vec::new(),
                     user_contents_for_manager_id: Default::default(),
@@ -2798,55 +2801,57 @@ where
             }
         }
 
-        debug!("Exiting public client storage thread.");
-        if let Err(e) = generic_channel::GenericSend::send(
-            &self.public_storage_threads,
-            ClientStorageThreadMessage::Exit(public_client_storage_generic_sender),
-        ) {
-            warn!("Exit public client storage thread failed ({})", e);
-        }
-        debug!("Exiting private client storage thread.");
-        if let Err(e) = generic_channel::GenericSend::send(
-            &self.private_storage_threads,
-            ClientStorageThreadMessage::Exit(private_client_storage_generic_sender),
-        ) {
-            warn!("Exit private client storage thread failed ({})", e);
-        }
+        if !pref!(bimp_flash_runtime_enabled) {
+            debug!("Exiting public client storage thread.");
+            if let Err(e) = generic_channel::GenericSend::send(
+                &self.public_storage_threads,
+                ClientStorageThreadMessage::Exit(public_client_storage_generic_sender),
+            ) {
+                warn!("Exit public client storage thread failed ({})", e);
+            }
+            debug!("Exiting private client storage thread.");
+            if let Err(e) = generic_channel::GenericSend::send(
+                &self.private_storage_threads,
+                ClientStorageThreadMessage::Exit(private_client_storage_generic_sender),
+            ) {
+                warn!("Exit private client storage thread failed ({})", e);
+            }
 
-        debug!("Exiting public indexeddb resource threads.");
-        if let Err(e) =
-            self.public_storage_threads
-                .send(IndexedDBThreadMsg::Sync(SyncOperation::Exit(
-                    public_indexeddb_ipc_sender,
-                )))
-        {
-            warn!("Exit public indexeddb thread failed ({})", e);
-        }
+            debug!("Exiting public indexeddb resource threads.");
+            if let Err(e) =
+                self.public_storage_threads
+                    .send(IndexedDBThreadMsg::Sync(SyncOperation::Exit(
+                        public_indexeddb_ipc_sender,
+                    )))
+            {
+                warn!("Exit public indexeddb thread failed ({})", e);
+            }
 
-        debug!("Exiting private indexeddb resource threads.");
-        if let Err(e) =
-            self.private_storage_threads
-                .send(IndexedDBThreadMsg::Sync(SyncOperation::Exit(
-                    private_indexeddb_ipc_sender,
-                )))
-        {
-            warn!("Exit private indexeddb thread failed ({})", e);
-        }
+            debug!("Exiting private indexeddb resource threads.");
+            if let Err(e) =
+                self.private_storage_threads
+                    .send(IndexedDBThreadMsg::Sync(SyncOperation::Exit(
+                        private_indexeddb_ipc_sender,
+                    )))
+            {
+                warn!("Exit private indexeddb thread failed ({})", e);
+            }
 
-        debug!("Exiting public web storage thread.");
-        if let Err(e) = generic_channel::GenericSend::send(
-            &self.public_storage_threads,
-            WebStorageThreadMsg::Exit(public_web_storage_generic_sender),
-        ) {
-            warn!("Exit public web storage thread failed ({})", e);
-        }
+            debug!("Exiting public web storage thread.");
+            if let Err(e) = generic_channel::GenericSend::send(
+                &self.public_storage_threads,
+                WebStorageThreadMsg::Exit(public_web_storage_generic_sender),
+            ) {
+                warn!("Exit public web storage thread failed ({})", e);
+            }
 
-        debug!("Exiting private web storage thread.");
-        if let Err(e) = generic_channel::GenericSend::send(
-            &self.private_storage_threads,
-            WebStorageThreadMsg::Exit(private_web_storage_generic_sender),
-        ) {
-            warn!("Exit private web storage thread failed ({})", e);
+            debug!("Exiting private web storage thread.");
+            if let Err(e) = generic_channel::GenericSend::send(
+                &self.private_storage_threads,
+                WebStorageThreadMsg::Exit(private_web_storage_generic_sender),
+            ) {
+                warn!("Exit private web storage thread failed ({})", e);
+            }
         }
 
         #[cfg(feature = "bluetooth")]
@@ -2917,23 +2922,25 @@ where
         if let Err(e) = core_ipc_receiver.recv() {
             warn!("Exit resource thread failed ({:?})", e);
         }
-        if let Err(e) = public_client_storage_generic_receiver.recv() {
-            warn!("Exit public client storage thread failed ({:?})", e);
-        }
-        if let Err(e) = private_client_storage_generic_receiver.recv() {
-            warn!("Exit private client storage thread failed ({:?})", e);
-        }
-        if let Err(e) = public_indexeddb_ipc_receiver.recv() {
-            warn!("Exit public indexeddb thread failed ({:?})", e);
-        }
-        if let Err(e) = private_indexeddb_ipc_receiver.recv() {
-            warn!("Exit private indexeddb thread failed ({:?})", e);
-        }
-        if let Err(e) = public_web_storage_generic_receiver.recv() {
-            warn!("Exit public web storage thread failed ({:?})", e);
-        }
-        if let Err(e) = private_web_storage_generic_receiver.recv() {
-            warn!("Exit private web storage thread failed ({:?})", e);
+        if !pref!(bimp_flash_runtime_enabled) {
+            if let Err(e) = public_client_storage_generic_receiver.recv() {
+                warn!("Exit public client storage thread failed ({:?})", e);
+            }
+            if let Err(e) = private_client_storage_generic_receiver.recv() {
+                warn!("Exit private client storage thread failed ({:?})", e);
+            }
+            if let Err(e) = public_indexeddb_ipc_receiver.recv() {
+                warn!("Exit public indexeddb thread failed ({:?})", e);
+            }
+            if let Err(e) = private_indexeddb_ipc_receiver.recv() {
+                warn!("Exit private indexeddb thread failed ({:?})", e);
+            }
+            if let Err(e) = public_web_storage_generic_receiver.recv() {
+                warn!("Exit public web storage thread failed ({:?})", e);
+            }
+            if let Err(e) = private_web_storage_generic_receiver.recv() {
+                warn!("Exit private web storage thread failed ({:?})", e);
+            }
         }
 
         debug!("Shutting-down IPC router thread in constellation.");

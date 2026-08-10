@@ -88,6 +88,7 @@ pub fn bimp_mode_blocks_resource_destination(
                 | request::Destination::Font
                 | request::Destination::Image
                 | request::Destination::Manifest
+                | request::Destination::Style
                 | request::Destination::Track
                 | request::Destination::Video
         ),

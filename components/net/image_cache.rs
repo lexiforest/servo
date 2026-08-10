@@ -785,6 +785,99 @@ pub struct ImageCacheFactoryImpl {
     fontdb: Arc<fontdb::Database>,
 }
 
+/// An image-cache factory for runtimes which intentionally do not support images. Unlike
+/// [`ImageCacheFactoryImpl`], constructing this does not initialize a decoder pool, SVG font
+/// database, system-font scan, or broken-image resource.
+pub struct DisabledImageCacheFactory;
+
+impl ImageCacheFactory for DisabledImageCacheFactory {
+    fn create(
+        &self,
+        _webview_id: WebViewId,
+        _pipeline_id: PipelineId,
+        _paint_api: &CrossProcessPaintApi,
+    ) -> Arc<dyn ImageCache> {
+        Arc::new(DisabledImageCache)
+    }
+}
+
+struct DisabledImageCache;
+
+impl ImageCache for DisabledImageCache {
+    fn memory_reports(&self, _prefix: &str, _ops: &mut MallocSizeOfOps) -> Vec<Report> {
+        Vec::new()
+    }
+
+    #[cfg(feature = "test-util")]
+    fn number_of_rasterize_tasks(&self) -> usize {
+        0
+    }
+
+    fn get_image_key(&self) -> Option<WebRenderImageKey> {
+        None
+    }
+
+    fn get_image(
+        &self,
+        _url: ServoUrl,
+        _origin: ImmutableOrigin,
+        _cors_setting: Option<CorsSettings>,
+    ) -> Option<Image> {
+        None
+    }
+
+    fn get_cached_image_status(
+        &self,
+        _url: ServoUrl,
+        _origin: ImmutableOrigin,
+        _cors_setting: Option<CorsSettings>,
+    ) -> ImageCacheResult {
+        ImageCacheResult::FailedToLoadOrDecode
+    }
+
+    fn rasterize_vector_image(
+        &self,
+        _image_id: PendingImageId,
+        _size: DeviceIntSize,
+        _svg_id: Option<String>,
+    ) -> Option<RasterImage> {
+        None
+    }
+
+    fn add_rasterization_complete_listener(
+        &self,
+        _pipeline_id: PipelineId,
+        _image_id: PendingImageId,
+        _size: DeviceIntSize,
+        _callback: ImageCacheResponseCallback,
+    ) {
+    }
+
+    fn evict_rasterized_image(&self, _svg_id: &str) {}
+
+    fn evict_completed_image(
+        &self,
+        _url: &ServoUrl,
+        _origin: &ImmutableOrigin,
+        _cors_setting: &Option<CorsSettings>,
+    ) {
+    }
+
+    fn get_broken_image_icon(&self) -> Option<Arc<RasterImage>> {
+        None
+    }
+
+    fn add_listener(&self, listener: ImageLoadListener) {
+        listener.respond(ImageResponse::FailedToLoadOrDecode);
+    }
+
+    fn notify_pending_response(&self, _id: PendingImageId, _action: FetchResponseMsg) {}
+
+    fn dispatch_fill_key_cache_with_batch_of_keys(&self, _image_keys: Vec<WebRenderImageKey>) {}
+
+    fn clear(&self) {}
+}
+
 impl ImageCacheFactoryImpl {
     pub fn new(broken_image_icon_data: Vec<u8>) -> Self {
         debug!("Creating new ImageCacheFactoryImpl");
