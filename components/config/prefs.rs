@@ -382,6 +382,8 @@ pub struct Preferences {
     pub user_agent: String,
     /// Bimp persona override for the network `Accept-Language` header.
     pub bimp_network_accept_language: String,
+    /// Bimp persona override for the network `Accept-Encoding` header.
+    pub bimp_network_accept_encoding: String,
     /// Bimp impersonate fingerprint profile used for HTTP(S) transport.
     pub bimp_network_impersonation_profile: String,
     /// Bimp persona override for `navigator.appVersion`.
@@ -502,12 +504,18 @@ pub struct Preferences {
     pub bimp_js_domrect_quantization_steps_per_px: i64,
     /// Whether empty Element.getClientRects() results should expose a zero rect in persona mode.
     pub bimp_js_domrect_fill_empty_client_rects: bool,
+    /// DOMRect persona rounding policy.
+    pub bimp_js_domrect_rounding: String,
+    /// Whether DOMRect persona processing preserves negative zero.
+    pub bimp_js_domrect_preserve_negative_zero: bool,
+    /// Whether known transform results are clamped to the target profile.
+    pub bimp_js_domrect_clamp_transforms: bool,
     /// Whether document-start JS engine surface impersonation is enabled.
     pub bimp_js_engine_impersonation_enabled: bool,
-    /// Persona override for V8-style Number.prototype.toFixed range errors.
-    pub bimp_js_engine_to_fixed_range_error_message: String,
-    /// Persona override for Array constructor native source.
-    pub bimp_js_engine_array_constructor_source: String,
+    /// Requested native JavaScript error stack format.
+    pub bimp_js_engine_stack_format: String,
+    /// Resolved structured persona sections consumed by document-start native shims.
+    pub bimp_js_native_profile_json: String,
     /// Whether Servo's internal WebDriver helper functions are exposed on Window.
     pub bimp_webdriver_helpers_enabled: bool,
     /// Whether Servo is embedded in Bimp's flash runtime.
@@ -705,6 +713,7 @@ impl Preferences {
             webgl_testing_context_creation_error: false,
             user_agent: String::new(),
             bimp_network_accept_language: String::new(),
+            bimp_network_accept_encoding: String::new(),
             bimp_network_impersonation_profile: String::new(),
             bimp_js_app_version: String::new(),
             bimp_js_platform: String::new(),
@@ -765,9 +774,12 @@ impl Preferences {
             bimp_js_domrect_enabled: false,
             bimp_js_domrect_quantization_steps_per_px: 0,
             bimp_js_domrect_fill_empty_client_rects: false,
+            bimp_js_domrect_rounding: String::new(),
+            bimp_js_domrect_preserve_negative_zero: false,
+            bimp_js_domrect_clamp_transforms: false,
             bimp_js_engine_impersonation_enabled: false,
-            bimp_js_engine_to_fixed_range_error_message: String::new(),
-            bimp_js_engine_array_constructor_source: String::new(),
+            bimp_js_engine_stack_format: String::new(),
+            bimp_js_native_profile_json: String::new(),
             bimp_webdriver_helpers_enabled: false,
             bimp_flash_runtime_enabled: false,
             bimp_style_engine_enabled: true,

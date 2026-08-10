@@ -197,10 +197,10 @@ fn set_default_accept_encoding(headers: &mut HeaderMap) {
     }
 
     // TODO(eijebong): Change this once typed headers are done
-    headers.insert(
-        header::ACCEPT_ENCODING,
-        HeaderValue::from_static("gzip, deflate, br, zstd"),
-    );
+    let persona_value = servo_config::pref!(bimp_network_accept_encoding);
+    let value = HeaderValue::from_str(&persona_value)
+        .unwrap_or_else(|_| HeaderValue::from_static("gzip, deflate, br, zstd"));
+    headers.insert(header::ACCEPT_ENCODING, value);
 }
 
 /// <https://w3c.github.io/webappsec-referrer-policy/#referrer-policy-state-no-referrer-when-downgrade>

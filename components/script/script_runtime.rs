@@ -31,7 +31,7 @@ use js::glue::{
 #[cfg(not(target_os = "windows"))]
 use js::glue::RustEnvironmentPreparer;
 use js::jsapi::JS::InitDispatchsToEventLoop;
-use js::jsapi::js::{ScriptEnvironmentPreparer, SetScriptEnvironmentPreparer};
+use js::jsapi::js::{ScriptEnvironmentPreparer, SetScriptEnvironmentPreparer, StackFormat};
 use js::jsapi::{
     AsmJSOption, BuildIdCharVector, CompilationType, Dispatchable_MaybeShuttingDown, GCDescription,
     GCOptions, GCProgress, GCReason, GetPromiseUserInputEventHandlingState, Handle as RawHandle,
@@ -53,7 +53,7 @@ use js::rust::wrappers2::{
     JS_InitReadPrincipalsCallback, JS_NewObject, JS_SetGCCallback, JS_SetGCParameter,
     JS_SetGlobalJitCompilerOption, JS_SetOffthreadIonCompilationEnabled, JS_SetSecurityCallbacks,
     SetDOMCallbacks, SetGCSliceCallback, SetJobQueue, SetPreserveWrapperCallbacks,
-    SetPromiseRejectionTrackerCallback,
+    SetPromiseRejectionTrackerCallback, SetStackFormat,
 };
 use js::rust::{
     Handle, HandleObject as RustHandleObject, HandleValue, IntoHandle, JSEngine, JSEngineHandle,
@@ -801,6 +801,13 @@ impl Runtime {
             RustRuntime::new(JS_ENGINE.lock().unwrap().as_ref().unwrap().clone())
         };
         let cx = runtime.cx();
+
+        let stack_format = match pref!(bimp_js_engine_stack_format).as_str() {
+            "v8" => StackFormat::V8,
+            "spidermonkey" => StackFormat::SpiderMonkey,
+            _ => StackFormat::Default,
+        };
+        unsafe { SetStackFormat(cx, stack_format) };
 
         let have_event_loop_sender = script_event_loop_sender.is_some();
         let runtime_callback_data = Box::new(RuntimeCallbackData {

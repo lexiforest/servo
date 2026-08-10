@@ -18,7 +18,7 @@ pub(crate) fn apply_domrect_persona(
         return (0.0, 0.0, 0.0, 0.0);
     }
 
-    if is_blink_known_rotated_square(x, y, width, height) {
+    if pref!(bimp_js_domrect_clamp_transforms) && is_blink_known_rotated_square(x, y, width, height) {
         return (
             -20.710678100585938,
             -20.710678100585938,
@@ -70,10 +70,27 @@ fn quantize(value: f64, steps: f64) -> f64 {
         return value;
     }
 
-    let quantized = (value * steps).round() / steps;
+    let phase = persona_phase();
+    let scaled = value * steps + phase;
+    let quantized = match pref!(bimp_js_domrect_rounding).as_str() {
+        "floor" => scaled.floor(),
+        "ceil" => scaled.ceil(),
+        "truncate" => scaled.trunc(),
+        _ => scaled.round(),
+    };
+    let quantized = (quantized - phase) / steps;
     normalize_zero(quantized)
 }
 
+fn persona_phase() -> f64 {
+    let hash = pref!(bimp_js_domrect_seed)
+        .bytes()
+        .fold(2_166_136_261_u32, |hash, byte| {
+            hash.wrapping_mul(16_777_619) ^ u32::from(byte)
+        });
+    f64::from(hash % 1024) / 1024.0
+}
+
 fn normalize_zero(value: f64) -> f64 {
-    if value == -0.0 { 0.0 } else { value }
+    if value == -0.0 && !pref!(bimp_js_domrect_preserve_negative_zero) { 0.0 } else { value }
 }

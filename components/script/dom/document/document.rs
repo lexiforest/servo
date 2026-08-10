@@ -3884,20 +3884,10 @@ impl Document {
     }
 
     pub(crate) fn ensure_bimp_engine_persona_script(&self, cx: &mut js::context::JSContext) {
-        if !pref!(bimp_js_engine_impersonation_enabled) ||
-            self.bimp_engine_persona_script_injected.replace(true)
-        {
+        if self.bimp_engine_persona_script_injected.replace(true) {
             return;
         }
 
-        let message = pref!(bimp_js_engine_to_fixed_range_error_message);
-        if message.is_empty() {
-            return;
-        }
-
-        let Ok(message_literal) = serde_json::to_string(&message) else {
-            return;
-        };
         let speech_voices_pref = pref!(bimp_js_speech_voices);
         let mut speech_voices = speech_voices_pref
             .split('|')
@@ -3911,22 +3901,36 @@ impl Document {
         let Ok(speech_voices_literal) = serde_json::to_string(&speech_voices) else {
             return;
         };
+        let native_profile_json = pref!(bimp_js_native_profile_json);
+        let Ok(native_profile_literal) = serde_json::to_string(&native_profile_json) else {
+            return;
+        };
 
         let source = format!(
             r#"(function() {{
-    if (globalThis.__bimpEnginePersonaApplied) {{
-        return;
-    }}
-    var message = {message_literal};
     var nativeApply = Reflect.apply;
     var nativeDefineProperty = Object.defineProperty;
     var nativeGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
     var nativeNumberToFixed = Number.prototype.toFixed;
-    var nativeErrorStackDescriptor = nativeGetOwnPropertyDescriptor(Error.prototype, "stack");
-    var nativeErrorStackGetter = nativeErrorStackDescriptor && nativeErrorStackDescriptor.get;
+    var nativeFunctionToString = Function.prototype.toString;
+    var bimpFunctionSources = typeof WeakMap == "function" ? new WeakMap() : null;
     var bimpSpeechVoiceNames = {speech_voices_literal};
+    var bimpPersona = JSON.parse({native_profile_literal});
+    var bimpEngine = bimpPersona.engine || {{}};
+    var bimpEngineErrorMessages = bimpEngine.error_messages || {{}};
+    var bimpEngineBuiltinSources = bimpEngine.builtin_sources || {{}};
+    var message = String(bimpEngineErrorMessages["number.to_fixed.range"] || "toFixed() digits argument must be between 0-100");
     var bimpOfflineAudioCompleteListeners = typeof WeakMap == "function" ? new WeakMap() : null;
     var bimpOfflineAudioRenderedContexts = typeof WeakSet == "function" ? new WeakSet() : null;
+    var bimpNativeOfflineAddEventListener = globalThis.OfflineAudioContext && OfflineAudioContext.prototype.addEventListener;
+    var bimpNativeOfflineRemoveEventListener = globalThis.OfflineAudioContext && OfflineAudioContext.prototype.removeEventListener;
+    var bimpAudioNativeShape = !bimpPersona.audio || bimpPersona.audio.native_shape !== false;
+    var bimpAudioNoiseEnabled = !bimpPersona.audio || bimpPersona.audio.noise_enabled !== false;
+    function bimpSeedUnit(seed) {{
+        var hash = 2166136261;
+        Array.from(String(seed || "")).forEach(function(char) {{ hash = Math.imul(hash ^ (char.codePointAt(0) || 0), 16777619); }});
+        return (hash >>> 0) / 4294967295;
+    }}
     function personaToFixed(fractionDigits) {{
         try {{
             return nativeApply(nativeNumberToFixed, this, arguments);
@@ -3937,24 +3941,6 @@ impl Document {
             }}
             throw err;
         }}
-    }}
-    function personaErrorStack() {{
-        var rawStack = nativeErrorStackGetter ? nativeApply(nativeErrorStackGetter, this, []) : "";
-        var name = String(this && this.name || "Error");
-        var message = String(this && this.message || "");
-        if (name === "TypeError" && message.indexOf("Function.prototype.toString called on incompatible object") !== -1) {{
-            return name + ": " + message + "\n" +
-                "    at Function.toString (<anonymous>) at Object.toString (<anonymous>)\n" +
-                rawStack;
-        }}
-        if (name === "TypeError" &&
-            message.indexOf("prototype") !== -1 &&
-            message.indexOf("is not an object") !== -1) {{
-            return name + ": " + message + "\n" +
-                "    at Function.[Symbol.hasInstance] (<anonymous>) at Proxy.[Symbol.hasInstance] (<anonymous>)\n" +
-                rawStack;
-        }}
-        return rawStack;
     }}
     function bimpChromeTimestampSeconds() {{
         if (globalThis.performance && performance.timeOrigin) {{
@@ -4010,16 +3996,31 @@ impl Document {
         }}
     }};
     function bimpDefineChromeFunction(fn, name, length, hasPrototype) {{
-        nativeDefineProperty(fn, "name", {{ value: name, configurable: true }});
-        nativeDefineProperty(fn, "length", {{ value: length, configurable: true }});
-        if (!hasPrototype) {{
+        var nativeConfig = bimpPersona.native_functions || {{}};
+        var preserveDescriptors = nativeConfig.preserve_descriptors !== false;
+        if (nativeConfig.preserve_name !== false) nativeDefineProperty(fn, "name", {{ value: name, writable: !preserveDescriptors, enumerable: !preserveDescriptors, configurable: true }});
+        if (nativeConfig.preserve_length !== false) nativeDefineProperty(fn, "length", {{ value: length, writable: !preserveDescriptors, enumerable: !preserveDescriptors, configurable: true }});
+        if (!hasPrototype || nativeConfig.constructor_prototypes === false) {{
             try {{
                 delete fn.prototype;
             }} catch (_) {{}}
         }}
+        if (bimpFunctionSources) {{
+            var source = String(nativeConfig.native_source || "function () {{ [native code] }}");
+            if (name) source = source.replace("function ()", "function " + name + "()");
+            bimpFunctionSources.set(fn, source);
+        }}
         return fn;
     }}
+    function bimpFunctionToString() {{
+        if (bimpFunctionSources && bimpFunctionSources.has(this)) return bimpFunctionSources.get(this);
+        return nativeApply(nativeFunctionToString, this, []);
+    }}
     function bimpInstallChromeObject() {{
+        var chromeConfig = bimpPersona.chrome || {{}};
+        if (chromeConfig.exposed === false) {{
+            return;
+        }}
         if ("chrome" in globalThis) {{
             return;
         }}
@@ -4042,18 +4043,20 @@ impl Document {
         nativeDefineProperty(app, "InstallState", {{ value: installState, writable: true, enumerable: true, configurable: true }});
         nativeDefineProperty(app, "RunningState", {{ value: runningState, writable: true, enumerable: true, configurable: true }});
         var chromeObject = {{}};
-        nativeDefineProperty(chromeObject, "loadTimes", {{ value: bimpChromeLoadTimes, writable: true, enumerable: true, configurable: true }});
-        nativeDefineProperty(chromeObject, "csi", {{ value: bimpChromeCsi, writable: true, enumerable: true, configurable: true }});
-        nativeDefineProperty(chromeObject, "app", {{ value: app, writable: true, enumerable: true, configurable: true }});
+        if (chromeConfig.load_times !== false) nativeDefineProperty(chromeObject, "loadTimes", {{ value: bimpChromeLoadTimes, writable: true, enumerable: true, configurable: true }});
+        if (chromeConfig.csi !== false) nativeDefineProperty(chromeObject, "csi", {{ value: bimpChromeCsi, writable: true, enumerable: true, configurable: true }});
+        if (chromeConfig.app !== false) nativeDefineProperty(chromeObject, "app", {{ value: app, writable: true, enumerable: true, configurable: true }});
+        if (chromeConfig.runtime !== false) nativeDefineProperty(chromeObject, "runtime", {{ value: {{}}, writable: true, enumerable: true, configurable: true }});
         nativeDefineProperty(globalThis, "chrome", {{
             value: chromeObject,
             writable: true,
-            enumerable: false,
-            configurable: false
+            enumerable: chromeConfig.enumerable === true,
+            configurable: true
         }});
     }}
     function bimpIllegalConstructor(name) {{
         var fn = function() {{
+            if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return {{}};
             throw new TypeError("Illegal constructor");
         }};
         bimpDefineChromeFunction(fn, name, 0, true);
@@ -4175,15 +4178,18 @@ impl Document {
         return "en-US";
     }}
     function bimpSpeechSynthesisVoice() {{
+        if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return {{}};
         throw new TypeError("Illegal constructor");
     }}
     function bimpSpeechSynthesis() {{
+        if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return {{}};
         throw new TypeError("Illegal constructor");
     }}
-    function bimpSpeechVoice(name, index, language) {{
+    function bimpSpeechVoice(config, index, language) {{
+        var name = String(config && config.name || config || "");
         var voice = Object.create(bimpSpeechSynthesisVoice.prototype);
         nativeDefineProperty(voice, "voiceURI", {{
-            value: name,
+            value: String(config && config.voice_uri || name),
             enumerable: true,
             configurable: true
         }});
@@ -4193,28 +4199,30 @@ impl Document {
             configurable: true
         }});
         nativeDefineProperty(voice, "lang", {{
-            value: language,
+            value: String(config && config.lang || language),
             enumerable: true,
             configurable: true
         }});
         nativeDefineProperty(voice, "localService", {{
-            value: true,
+            value: !config || config.local_service !== false,
             enumerable: true,
             configurable: true
         }});
         nativeDefineProperty(voice, "default", {{
-            value: index === 0,
+            value: config && typeof config.default == "boolean" ? config.default : index === 0,
             enumerable: true,
             configurable: true
         }});
         return voice;
     }}
     function bimpInstallSpeechSynthesis() {{
-        if ("speechSynthesis" in globalThis) {{
+        if ("speechSynthesis" in globalThis && !(bimpPersona.speech && bimpPersona.speech.block_system_voices)) {{
             return;
         }}
         var language = bimpSpeechLang();
-        var names = Array.isArray(bimpSpeechVoiceNames) && bimpSpeechVoiceNames.length ?
+        var configuredVoices = bimpPersona.speech && bimpPersona.speech.voices;
+        var names = Array.isArray(configuredVoices) && configuredVoices.length ? configuredVoices :
+            Array.isArray(bimpSpeechVoiceNames) && bimpSpeechVoiceNames.length ?
             bimpSpeechVoiceNames :
             ["Samantha", "Alex"];
         var voices = names.map(function(name, index) {{
@@ -4364,7 +4372,7 @@ impl Document {
                     nativeApply(onvoiceschanged, speechSynthesisObject, [event]);
                 }} catch (_) {{}}
             }}
-        }}, 0);
+        }}, Number(bimpPersona.speech && bimpPersona.speech.fake_completion_delay_ms || 0));
     }}
     function bimpSvgTextUnits(element) {{
         var text = String(element && element.textContent || "");
@@ -4377,9 +4385,13 @@ impl Document {
         var entropy = codePoints.reduce(function(acc, char) {{
             return acc + (char.codePointAt(0) || 0);
         }}, 0);
+        var svgSeed = String(bimpPersona.svg && bimpPersona.svg.seed || "");
+        if (!bimpPersona.noise || bimpPersona.noise.enabled !== false && bimpPersona.noise.svg !== false) entropy += Array.from(svgSeed).reduce(function(acc, char) {{ return acc + (char.codePointAt(0) || 0); }}, 0);
+        var fontSeed = String(bimpPersona.fonts && bimpPersona.fonts.spacing_seed || "") + String(bimpPersona.fonts && bimpPersona.fonts.text_metric_profile || "") + String(bimpPersona.fonts && bimpPersona.fonts.hinting || "");
+        if (!bimpPersona.noise || bimpPersona.noise.enabled !== false && bimpPersona.noise.fonts !== false) entropy += Math.floor(bimpSeedUnit(fontSeed) * 997);
         return {{
             count: Math.max(1, codePoints.length),
-            width: Math.max(1, (fontSize * 0.62 * Math.max(1, codePoints.length)) + ((entropy % 97) / 100)),
+            width: Math.max(1, (fontSize * Number(bimpPersona.svg && bimpPersona.svg.text_width_factor || 0.62) * Math.max(1, codePoints.length)) + ((entropy % 97) / 100)),
             height: Math.max(1, fontSize)
         }};
     }}
@@ -4407,7 +4419,7 @@ impl Document {
             return bimpSvgRect(
                 Number.isFinite(x) ? x : 0,
                 Number.isFinite(y) ? y : 0,
-                Number.isFinite(width) ? width : 0,
+                (Number.isFinite(width) ? width : 0) * Number(bimpPersona.svg && bimpPersona.svg.bbox_width_factor || 1),
                 Number.isFinite(height) ? height : 0
             );
         }}
@@ -4418,7 +4430,7 @@ impl Document {
         textNodes.forEach(function(node) {{
             var units = bimpSvgTextUnits(node);
             var x = bimpSvgTextX(node);
-            var y = bimpSvgTextY(node) - units.height * 0.78;
+            var y = bimpSvgTextY(node) - units.height * Number(bimpPersona.svg && bimpPersona.svg.baseline_factor || 0.78);
             left = Math.min(left, x);
             top = Math.min(top, y);
             right = Math.max(right, x + units.width);
@@ -4427,7 +4439,7 @@ impl Document {
         if (!Number.isFinite(left) || !Number.isFinite(top) || !Number.isFinite(right) || !Number.isFinite(bottom)) {{
             return bimpSvgRect(0, 0, 0, 0);
         }}
-        return bimpSvgRect(left, top, right - left, bottom - top);
+        return bimpSvgRect(left, top, (right - left) * Number(bimpPersona.svg && bimpPersona.svg.bbox_width_factor || 1), bottom - top);
     }}
     function bimpSvgComputedTextLength() {{
         return bimpSvgTextUnits(this).width;
@@ -4438,7 +4450,7 @@ impl Document {
         var charWidth = units.width / units.count;
         return bimpSvgRect(
             bimpSvgTextX(this) + charWidth * safeIndex,
-            bimpSvgTextY(this) - units.height * 0.78,
+            bimpSvgTextY(this) - units.height * Number(bimpPersona.svg && bimpPersona.svg.baseline_factor || 0.78),
             charWidth,
             units.height
         );
@@ -4465,13 +4477,14 @@ impl Document {
         nativeDefineProperty(node, "release", {{ value: bimpAudioParam(0.25, 0, 1), configurable: true }});
         nativeDefineProperty(node, "threshold", {{ value: bimpAudioParam(-24, -100, 0), configurable: true }});
         nativeDefineProperty(node, "reduction", {{
-            value: -20.538288116455078,
+            value: Number(bimpPersona.audio && bimpPersona.audio.compressor_reduction || -20.538288116455078),
             writable: true,
             configurable: true
         }});
         return node;
     }}
     function bimpDynamicsCompressorNode() {{
+        if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return {{}};
         throw new TypeError("Illegal constructor");
     }}
     function bimpAudioRenderedBuffer(context) {{
@@ -4480,7 +4493,8 @@ impl Document {
         var buffer = new AudioBuffer({{ length: length, sampleRate: sampleRate, numberOfChannels: 1 }});
         var data = buffer.getChannelData(0);
         for (var i = 0; i < data.length; i++) {{
-            data[i] = 0;
+            var profile = bimpPersona.audio && bimpPersona.audio.rendered_buffer || ["0"];
+            data[i] = Number(profile[i % profile.length] || 0) + (bimpAudioNoiseEnabled ? (bimpSeedUnit(bimpPersona.audio && bimpPersona.audio.seed) - 0.5) * 1e-8 : 0);
         }}
         return buffer;
     }}
@@ -4502,8 +4516,8 @@ impl Document {
             listeners.push(listener);
             return;
         }}
-        if (this.__bimpNativeAddEventListener) {{
-            return nativeApply(this.__bimpNativeAddEventListener, this, arguments);
+        if (bimpNativeOfflineAddEventListener) {{
+            return nativeApply(bimpNativeOfflineAddEventListener, this, arguments);
         }}
     }}
     function bimpOfflineRemoveEventListener(type, listener) {{
@@ -4514,8 +4528,8 @@ impl Document {
             }}));
             return;
         }}
-        if (this.__bimpNativeRemoveEventListener) {{
-            return nativeApply(this.__bimpNativeRemoveEventListener, this, arguments);
+        if (bimpNativeOfflineRemoveEventListener) {{
+            return nativeApply(bimpNativeOfflineRemoveEventListener, this, arguments);
         }}
     }}
     function bimpOfflineStartRendering() {{
@@ -4525,8 +4539,6 @@ impl Document {
             setTimeout(function() {{
                 if (bimpOfflineAudioRenderedContexts) {{
                     bimpOfflineAudioRenderedContexts.add(context);
-                }} else {{
-                    globalThis.__bimpOfflineAudioRendered = true;
                 }}
                 var event = bimpOfflineAudioCompleteEvent.call(context, buffer);
                 var listeners = bimpOfflineAudioCompleteListeners ? bimpOfflineAudioCompleteListeners.get(context) || [] : [];
@@ -4541,44 +4553,54 @@ impl Document {
                     }} catch (_) {{}}
                 }}
                 resolve(buffer);
-            }}, 0);
+            }}, Number(bimpPersona.audio && bimpPersona.audio.fake_completion_delay_ms || 0));
         }});
     }}
     var bimpAnalyserMethods = {{
         getFloatFrequencyData(array) {{
             if (!globalThis.AnalyserNode || !(this instanceof AnalyserNode)) {{
+                if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return;
                 throw new TypeError("Illegal invocation");
             }}
             if (!array) {{
                 return;
             }}
-            var rendered = bimpOfflineAudioRenderedContexts && this && this.context ?
-                bimpOfflineAudioRenderedContexts.has(this.context) :
-                !!globalThis.__bimpOfflineAudioRendered;
+            var rendered = bimpOfflineAudioRenderedContexts && this && this.context &&
+                bimpOfflineAudioRenderedContexts.has(this.context);
             if (!rendered) {{
                 for (var i = 0; i < array.length; i++) {{
                     array[i] = -Infinity;
                 }}
                 return;
             }}
+            var frequencyProfile = bimpPersona.audio && bimpPersona.audio.frequency_data || ["-20.538288116455078", "-160"];
             for (var j = 0; j < array.length; j++) {{
-                array[j] = j === 0 ? -20.538288116455078 : -160;
+                array[j] = Number(frequencyProfile[j % frequencyProfile.length]) + (bimpSeedUnit(bimpPersona.audio && bimpPersona.audio.seed) - 0.5) * 1e-6;
             }}
         }},
         getFloatTimeDomainData(array) {{
             if (!globalThis.AnalyserNode || !(this instanceof AnalyserNode)) {{
+                if (bimpPersona.native_functions && bimpPersona.native_functions.illegal_invocation_errors === false) return;
                 throw new TypeError("Illegal invocation");
             }}
             if (!array) {{
                 return;
             }}
+            var timeProfile = bimpPersona.audio && bimpPersona.audio.time_domain_data || ["0.122705061", "-0.122705061"];
             for (var i = 0; i < array.length; i++) {{
-                array[i] = i % 2 === 0 ? 0.122705061 : -0.122705061;
+                array[i] = Number(timeProfile[i % timeProfile.length]) + (bimpSeedUnit(bimpPersona.audio && bimpPersona.audio.seed) - 0.5) * 1e-8;
             }}
         }}
     }};
     var bimpGetFloatFrequencyData = bimpAnalyserMethods.getFloatFrequencyData;
     var bimpGetFloatTimeDomainData = bimpAnalyserMethods.getFloatTimeDomainData;
+    if (bimpFunctionSources) {{
+        bimpFunctionSources.set(Array, String(bimpEngineBuiltinSources.Array || "function Array() {{ [native code] }}"));
+        bimpFunctionSources.set(bimpFunctionToString, "function toString() {{ [native code] }}");
+    }}
+    nativeDefineProperty(bimpFunctionToString, "name", {{ value: "toString", configurable: true }});
+    nativeDefineProperty(bimpFunctionToString, "length", {{ value: 0, configurable: true }});
+    nativeDefineProperty(Function.prototype, "toString", {{ value: bimpFunctionToString, writable: true, configurable: true }});
     nativeDefineProperty(personaToFixed, "name", {{ value: "toFixed", configurable: true }});
     nativeDefineProperty(personaToFixed, "length", {{ value: 1, configurable: true }});
     bimpDefineChromeFunction(bimpChromeLoadTimes, "", 0, true);
@@ -4609,7 +4631,7 @@ impl Document {
     nativeDefineProperty(bimpGetFloatFrequencyData, "length", {{ value: 1, configurable: true }});
     nativeDefineProperty(bimpGetFloatTimeDomainData, "name", {{ value: "getFloatTimeDomainData", configurable: true }});
     nativeDefineProperty(bimpGetFloatTimeDomainData, "length", {{ value: 1, configurable: true }});
-    nativeDefineProperty(Number.prototype, "toFixed", {{
+    if (!bimpPersona.engine || bimpPersona.engine.enabled !== false) nativeDefineProperty(Number.prototype, "toFixed", {{
         value: personaToFixed,
         writable: true,
         configurable: true
@@ -4647,14 +4669,14 @@ impl Document {
             }});
         }}
     }}
-    if (globalThis.BaseAudioContext && BaseAudioContext.prototype && !BaseAudioContext.prototype.createDynamicsCompressor) {{
+    if (bimpAudioNativeShape && globalThis.BaseAudioContext && BaseAudioContext.prototype && !BaseAudioContext.prototype.createDynamicsCompressor) {{
         nativeDefineProperty(BaseAudioContext.prototype, "createDynamicsCompressor", {{
             value: bimpCreateDynamicsCompressor,
             writable: true,
             configurable: true
         }});
     }}
-    if (!globalThis.DynamicsCompressorNode) {{
+    if (bimpAudioNativeShape && !globalThis.DynamicsCompressorNode) {{
         bimpDynamicsCompressorNode.prototype = globalThis.AudioNode ? Object.create(AudioNode.prototype) : {{}};
         nativeDefineProperty(bimpDynamicsCompressorNode.prototype, "constructor", {{
             value: bimpDynamicsCompressorNode,
@@ -4667,17 +4689,7 @@ impl Document {
             configurable: true
         }});
     }}
-    if (globalThis.OfflineAudioContext && OfflineAudioContext.prototype) {{
-        if (!OfflineAudioContext.prototype.__bimpNativeAddEventListener) {{
-            nativeDefineProperty(OfflineAudioContext.prototype, "__bimpNativeAddEventListener", {{
-                value: OfflineAudioContext.prototype.addEventListener,
-                configurable: false
-            }});
-            nativeDefineProperty(OfflineAudioContext.prototype, "__bimpNativeRemoveEventListener", {{
-                value: OfflineAudioContext.prototype.removeEventListener,
-                configurable: false
-            }});
-        }}
+    if (bimpAudioNativeShape && bimpAudioNoiseEnabled && globalThis.OfflineAudioContext && OfflineAudioContext.prototype) {{
         nativeDefineProperty(OfflineAudioContext.prototype, "addEventListener", {{
             value: bimpOfflineAddEventListener,
             writable: true,
@@ -4694,7 +4706,7 @@ impl Document {
             configurable: true
         }});
     }}
-    if (globalThis.AnalyserNode && AnalyserNode.prototype) {{
+    if (bimpAudioNativeShape && bimpAudioNoiseEnabled && globalThis.AnalyserNode && AnalyserNode.prototype) {{
         var bimpNativeGetFloatFrequencyData = AnalyserNode.prototype.getFloatFrequencyData;
         var bimpNativeGetFloatTimeDomainData = AnalyserNode.prototype.getFloatTimeDomainData;
         var bimpFloatFrequencyDataReads = 0;
@@ -4734,18 +4746,162 @@ impl Document {
             }});
         }}
     }}
-    if (nativeErrorStackDescriptor && nativeErrorStackGetter) {{
-        nativeDefineProperty(Error.prototype, "stack", {{
-            get: personaErrorStack,
-            set: nativeErrorStackDescriptor.set,
-            enumerable: nativeErrorStackDescriptor.enumerable,
-            configurable: nativeErrorStackDescriptor.configurable
-        }});
+    if (bimpPersona.audio && globalThis.BaseAudioContext && BaseAudioContext.prototype) {{
+        if (bimpPersona.audio.sample_rate != null) nativeDefineProperty(BaseAudioContext.prototype, "sampleRate", {{ get: function() {{ return Number(bimpPersona.audio.sample_rate); }}, configurable: true }});
+        if (bimpPersona.audio.output_latency_ms != null && globalThis.AudioContext && AudioContext.prototype) nativeDefineProperty(AudioContext.prototype, "outputLatency", {{ get: function() {{ return Number(bimpPersona.audio.output_latency_ms) / 1000; }}, configurable: true }});
+        if (bimpPersona.audio.max_channel_count != null && globalThis.AudioDestinationNode && AudioDestinationNode.prototype) nativeDefineProperty(AudioDestinationNode.prototype, "maxChannelCount", {{ get: function() {{ return Number(bimpPersona.audio.max_channel_count); }}, configurable: true }});
     }}
-    nativeDefineProperty(globalThis, "__bimpEnginePersonaApplied", {{
-        value: true,
-        configurable: false
-    }});
+    function bimpInstallPlugins() {{
+        var config = bimpPersona.plugins;
+        if (!config || !Array.isArray(config.entries)) return;
+        var plugins = [];
+        var mimeTypes = [];
+        config.entries.forEach(function(entry) {{
+            var plugin = Object.create(globalThis.Plugin && Plugin.prototype || Object.prototype);
+            nativeDefineProperty(plugin, "name", {{ value: String(entry.name), enumerable: true }});
+            nativeDefineProperty(plugin, "filename", {{ value: String(entry.filename || ""), enumerable: true }});
+            nativeDefineProperty(plugin, "description", {{ value: String(entry.description || ""), enumerable: true }});
+            var mimes = [];
+            (entry.mime_types || []).forEach(function(mime) {{
+                var object = Object.create(globalThis.MimeType && MimeType.prototype || Object.prototype);
+                nativeDefineProperty(object, "type", {{ value: String(mime.type), enumerable: true }});
+                nativeDefineProperty(object, "suffixes", {{ value: String(mime.suffixes || ""), enumerable: true }});
+                nativeDefineProperty(object, "description", {{ value: String(mime.description || ""), enumerable: true }});
+                nativeDefineProperty(object, "enabledPlugin", {{ value: plugin, enumerable: true }});
+                mimes.push(object); mimeTypes.push(object);
+                nativeDefineProperty(plugin, object.type, {{ value: object, enumerable: false }});
+            }});
+            nativeDefineProperty(plugin, "length", {{ value: mimes.length }});
+            plugin.item = function(index) {{ return mimes[index] || null; }};
+            plugin.namedItem = function(name) {{ return mimes.find(function(item) {{ return item.type === name; }}) || null; }};
+            plugins.push(plugin);
+        }});
+        function finishArray(values, prototype) {{
+            var object = Object.create(prototype || Object.prototype);
+            values.forEach(function(value, index) {{ nativeDefineProperty(object, index, {{ value: value, enumerable: true }}); }});
+            nativeDefineProperty(object, "length", {{ value: values.length }});
+            object.item = function(index) {{ return values[index] || null; }};
+            object.namedItem = function(name) {{ return values.find(function(item) {{ return item.name === name || item.type === name; }}) || null; }};
+            return object;
+        }}
+        var pluginArray = finishArray(plugins, globalThis.PluginArray && PluginArray.prototype);
+        var mimeTypeArray = finishArray(mimeTypes, globalThis.MimeTypeArray && MimeTypeArray.prototype);
+        if (globalThis.Navigator && Navigator.prototype) {{
+            nativeDefineProperty(Navigator.prototype, "plugins", {{ get: function() {{ return pluginArray; }}, configurable: true }});
+            nativeDefineProperty(Navigator.prototype, "mimeTypes", {{ get: function() {{ return mimeTypeArray; }}, configurable: true }});
+            if (typeof config.pdf_enabled == "boolean") nativeDefineProperty(Navigator.prototype, "pdfViewerEnabled", {{ get: function() {{ return config.pdf_enabled; }}, configurable: true }});
+        }}
+    }}
+    function bimpInstallWebGlProfile(prototype, profile) {{
+        if (!prototype || !profile) return;
+        var nativeGetParameter = prototype.getParameter;
+        var nativeGetSupportedExtensions = prototype.getSupportedExtensions;
+        var nativeGetContextAttributes = prototype.getContextAttributes;
+        var nativeGetShaderPrecisionFormat = prototype.getShaderPrecisionFormat;
+        var nativeReadPixels = prototype.readPixels;
+        if (typeof nativeGetParameter == "function") nativeDefineProperty(prototype, "getParameter", {{ value: function(parameter) {{
+            var key = String(parameter);
+            if (Object.prototype.hasOwnProperty.call(profile.parameters || {{}}, key)) return profile.parameters[key];
+            if (profile.block_unknown_parameters) return null;
+            return nativeApply(nativeGetParameter, this, arguments);
+        }}, configurable: true, writable: true }});
+        if (typeof nativeGetSupportedExtensions == "function" && Array.isArray(profile.extensions) && (profile.extensions.length || profile.block_unknown_extensions)) nativeDefineProperty(prototype, "getSupportedExtensions", {{ value: function() {{ return profile.extensions.slice(); }}, configurable: true, writable: true }});
+        if (typeof nativeGetContextAttributes == "function" && profile.context_attributes) nativeDefineProperty(prototype, "getContextAttributes", {{ value: function() {{ return Object.assign({{}}, nativeApply(nativeGetContextAttributes, this, []), profile.context_attributes); }}, configurable: true, writable: true }});
+        if (typeof nativeGetShaderPrecisionFormat == "function" && Array.isArray(profile.shader_precision_formats)) nativeDefineProperty(prototype, "getShaderPrecisionFormat", {{ value: function(shaderType, precisionType) {{
+            var match = profile.shader_precision_formats.find(function(item) {{ return String(item.shader_type) === String(shaderType) && String(item.precision_type) === String(precisionType); }});
+            if (!match) return nativeApply(nativeGetShaderPrecisionFormat, this, arguments);
+            return {{ rangeMin: match.range_min, rangeMax: match.range_max, precision: match.precision }};
+        }}, configurable: true, writable: true }});
+        if (typeof nativeReadPixels == "function" && (!bimpPersona.noise || bimpPersona.noise.enabled !== false && bimpPersona.noise.webgl !== false)) nativeDefineProperty(prototype, "readPixels", {{ value: function() {{
+            var result = nativeApply(nativeReadPixels, this, arguments);
+            var pixels = arguments[arguments.length - 1];
+            if (pixels && ArrayBuffer.isView(pixels) && pixels.length) {{
+                var delta = bimpSeedUnit(bimpPersona.graphics && bimpPersona.graphics.webgl_seed) < 0.5 ? -1 : 1;
+                pixels[0] = Math.max(0, Math.min(255, Number(pixels[0]) + delta));
+            }}
+            return result;
+        }}, configurable: true, writable: true }});
+    }}
+    function bimpInstallBatteryAndStorage() {{
+        var battery = bimpPersona.battery;
+        if (battery && !globalThis.BatteryManager) nativeDefineProperty(globalThis, "BatteryManager", {{ value: bimpIllegalConstructor("BatteryManager"), configurable: true }});
+        if (battery && globalThis.Navigator && Navigator.prototype) nativeDefineProperty(Navigator.prototype, "getBattery", {{ value: function() {{
+            var manager = Object.create(globalThis.BatteryManager && BatteryManager.prototype || Object.prototype);
+            nativeDefineProperty(manager, "charging", {{ value: !!battery.charging, enumerable: true }});
+            nativeDefineProperty(manager, "chargingTime", {{ value: Number(battery.charging_time_seconds || 0), enumerable: true }});
+            nativeDefineProperty(manager, "dischargingTime", {{ value: battery.discharging_time_seconds == null ? Infinity : Number(battery.discharging_time_seconds), enumerable: true }});
+            nativeDefineProperty(manager, "level", {{ value: Number(battery.level_percent == null ? 100 : battery.level_percent) / 100, enumerable: true }});
+            manager.addEventListener = function() {{}}; manager.removeEventListener = function() {{}}; manager.dispatchEvent = function() {{ return true; }};
+            return Promise.resolve(manager);
+        }}, configurable: true, writable: true }});
+        var storage = bimpPersona.storage;
+        if (storage && navigator.storage) nativeDefineProperty(Object.getPrototypeOf(navigator.storage), "estimate", {{ value: function() {{ return Promise.resolve({{ usage: Number(storage.usage_bytes || 0), quota: storage.quota_bytes == null ? undefined : Number(storage.quota_bytes) }}); }}, configurable: true, writable: true }});
+        function installLegacyStorage(name, quotaKey) {{
+            if (storage && storage[quotaKey] != null) nativeDefineProperty(globalThis, name, {{ value: {{ queryUsageAndQuota: function(success) {{ if (success) success(Number(storage.usage_bytes || 0), Number(storage[quotaKey])); }}, requestQuota: function(bytes, success) {{ if (success) success(Math.min(Number(bytes), Number(storage[quotaKey]))); }} }}, configurable: true }});
+        }}
+        installLegacyStorage("webkitTemporaryStorage", "legacy_temporary_quota_bytes");
+        installLegacyStorage("webkitPersistentStorage", "legacy_persistent_quota_bytes");
+    }}
+    function bimpInstallGeolocationAndWebRtc() {{
+        var geo = bimpPersona.geo;
+        if (geo && geo.latitude != null && geo.longitude != null && navigator.geolocation) {{
+            var geolocationPrototype = Object.getPrototypeOf(navigator.geolocation);
+            var position = function() {{ return {{ coords: {{ latitude: Number(geo.latitude), longitude: Number(geo.longitude), accuracy: Number(geo.accuracy_meters || 0), altitude: geo.altitude == null ? null : Number(geo.altitude), altitudeAccuracy: geo.altitude_accuracy_meters == null ? null : Number(geo.altitude_accuracy_meters), heading: geo.heading_degrees == null ? null : Number(geo.heading_degrees), speed: geo.speed_meters_per_second == null ? null : Number(geo.speed_meters_per_second) }}, timestamp: Date.now() }}; }};
+            nativeDefineProperty(geolocationPrototype, "getCurrentPosition", {{ value: function(success) {{ if (typeof success == "function") setTimeout(function() {{ success(position()); }}, 0); }}, configurable: true, writable: true }});
+            nativeDefineProperty(geolocationPrototype, "watchPosition", {{ value: function(success) {{ if (typeof success == "function") setTimeout(function() {{ success(position()); }}, 0); return 1; }}, configurable: true, writable: true }});
+        }}
+        var rtc = bimpPersona.webrtc;
+        function replaceAddresses(value) {{
+            if (typeof value != "string" || !rtc) return value;
+            return value.replace(/(?:\d{{1,3}}\.){{3}}\d{{1,3}}/g, rtc.ipv4 || "$&").replace(/(?:[a-fA-F0-9]{{0,4}}:){{2,}}[a-fA-F0-9]{{0,4}}/g, rtc.ipv6 || "$&");
+        }}
+        if (rtc && globalThis.RTCIceCandidate && RTCIceCandidate.prototype && rtc.substitute_ice_candidates) {{
+            var candidateDescriptor = nativeGetOwnPropertyDescriptor(RTCIceCandidate.prototype, "candidate");
+            if (candidateDescriptor && candidateDescriptor.get) nativeDefineProperty(RTCIceCandidate.prototype, "candidate", {{ get: function() {{ return replaceAddresses(nativeApply(candidateDescriptor.get, this, [])); }}, enumerable: candidateDescriptor.enumerable, configurable: true }});
+        }}
+        if (rtc && globalThis.RTCSessionDescription && RTCSessionDescription.prototype && rtc.substitute_sdp) {{
+            var sdpDescriptor = nativeGetOwnPropertyDescriptor(RTCSessionDescription.prototype, "sdp");
+            if (sdpDescriptor && sdpDescriptor.get) nativeDefineProperty(RTCSessionDescription.prototype, "sdp", {{ get: function() {{ return replaceAddresses(nativeApply(sdpDescriptor.get, this, [])); }}, enumerable: sdpDescriptor.enumerable, configurable: true }});
+        }}
+    }}
+    function bimpInstallCssMedia() {{
+        var media = bimpPersona.css && bimpPersona.css.media;
+        if (!media || typeof globalThis.matchMedia != "function") return;
+        var nativeMatchMedia = globalThis.matchMedia;
+        nativeDefineProperty(globalThis, "matchMedia", {{ value: function(query) {{
+            var result = nativeApply(nativeMatchMedia, this, arguments);
+            var normalized = String(query).toLowerCase();
+            var keys = {{ "pointer": "pointer", "any-pointer": "any_pointer", "hover": "hover", "any-hover": "any_hover", "color-gamut": "color_gamut", "prefers-reduced-motion": "prefers_reduced_motion", "orientation": "orientation", "display-mode": "display_mode" }};
+            Object.keys(keys).some(function(feature) {{ var match = normalized.match(new RegExp("\\(" + feature + "\\s*:\\s*([^\\)]+)\\)")); if (match && media[keys[feature]]) {{ nativeDefineProperty(result, "matches", {{ value: match[1].trim() === media[keys[feature]] }}); return true; }} return false; }});
+            return result;
+        }}, configurable: true, writable: true }});
+    }}
+    function bimpApplyFeatureGates() {{
+        var features = bimpPersona.features || {{}};
+        var globals = {{ webgpu: "GPU", webrtc: "RTCPeerConnection", battery: "BatteryManager", vibration: "Vibration", workers: "Worker", service_worker: "ServiceWorker", offscreen_canvas: "OffscreenCanvas", motion: "DeviceMotionEvent", orientation: "DeviceOrientationEvent", contacts: "ContactsManager", bluetooth: "Bluetooth", notifications: "Notification" }};
+        Object.keys(globals).forEach(function(key) {{ if (features[key] === false) try {{ delete globalThis[globals[key]]; }} catch (_) {{}} }});
+        if (features.webgl === false) try {{ delete globalThis.WebGLRenderingContext; }} catch (_) {{}}
+        if (features.webgl2 === false) try {{ delete globalThis.WebGL2RenderingContext; }} catch (_) {{}}
+        if (features.geolocation === false && globalThis.Navigator && Navigator.prototype) try {{ delete Navigator.prototype.geolocation; }} catch (_) {{}}
+        var navigatorMembers = {{ permissions: "permissions", share: "share", contacts: "contacts", bluetooth: "bluetooth", service_worker: "serviceWorker", battery: "getBattery", vibration: "vibrate" }};
+        if (globalThis.Navigator && Navigator.prototype) Object.keys(navigatorMembers).forEach(function(key) {{ if (features[key] === false) try {{ delete Navigator.prototype[navigatorMembers[key]]; }} catch (_) {{}} }});
+        if (features.touch === false && globalThis.Navigator && Navigator.prototype) nativeDefineProperty(Navigator.prototype, "maxTouchPoints", {{ get: function() {{ return 0; }}, configurable: true }});
+        if (features.content_index === false && globalThis.ContentIndex) try {{ delete globalThis.ContentIndex; }} catch (_) {{}}
+    }}
+    bimpInstallPlugins();
+    bimpInstallWebGlProfile(globalThis.WebGLRenderingContext && WebGLRenderingContext.prototype, bimpPersona.graphics && bimpPersona.graphics.webgl1);
+    bimpInstallWebGlProfile(globalThis.WebGL2RenderingContext && WebGL2RenderingContext.prototype, bimpPersona.graphics && bimpPersona.graphics.webgl2);
+    bimpInstallBatteryAndStorage();
+    bimpInstallGeolocationAndWebRtc();
+    bimpInstallCssMedia();
+    bimpApplyFeatureGates();
+    if (bimpPersona.chrome && bimpPersona.chrome.exposed === false) try {{ delete globalThis.chrome; }} catch (_) {{}}
+    if (globalThis.chrome && bimpPersona.chrome && bimpPersona.chrome.window_key_strategy === "append") {{
+        var chromeDescriptor = nativeGetOwnPropertyDescriptor(globalThis, "chrome");
+        try {{ delete globalThis.chrome; }} catch (_) {{}}
+        if (chromeDescriptor) nativeDefineProperty(globalThis, "chrome", chromeDescriptor);
+    }}
+    if (bimpPersona.svg && bimpPersona.svg.expose_geometry_methods === false && globalThis.SVGElement) ["getBBox", "getComputedTextLength", "getExtentOfChar", "getSubStringLength"].forEach(function(name) {{ try {{ delete SVGElement.prototype[name]; }} catch (_) {{}} }});
 }})();"#
         );
 
